@@ -1,0 +1,295 @@
+import numpy as np
+import pandas as pd
+
+import statsmodels
+import statsmodels.api as sm
+from statsmodels.tsa.stattools import coint, adfuller
+
+import matplotlib.pyplot as plt
+
+# Import Datetime and the Pandas DataReader
+from datetime import datetime
+from pandas_datareader import data, wb
+
+# just set the seed for the random number generator
+np.random.seed(107)
+
+class Trader:
+	"""
+	This class contains a set of pairs trading strategies along
+	with some auxiliary functions    
+
+	"""
+	def __init__(self):
+		"""
+		:initial elements
+		"""
+
+	def rolling_regression(self, y, x, window):
+		""" 
+		y and x must be pandas.Series
+		y is the dependent variable
+		x is the independent variable
+		spread: y - b*x
+		Source: https://stackoverflow.com/questions/37317727/deprecated-rolling-window-
+				option-in-ols-from-pandas-to-statsmodels/39704930#39704930
+		"""
+		# Clean-up
+		x = x.dropna()
+		y = y.dropna()
+		# Trim acc to shortest
+		if x.index.size > y.index.size:
+			x = x[y.index]
+		else:
+			y = y[x.index]
+		# Verify enough space
+		if x.index.size < window:
+			return None
+		else:
+		# Add a constant if needed
+			X_name = x.name
+			X = x.to_frame()
+			X['c'] = 1
+		# Loop... this can be improved
+			estimate_data = []
+			for i in range(window, len(X)):
+				X_slice = X.iloc[i-window:i,:] # always index in np as opposed to pandas, much faster
+				y_slice = y.iloc[i-window:i]
+				coeff = sm.OLS(y_slice, X_slice).fit()
+				estimate_data.append(coeff.params[X_name])
+
+		# Assemble
+			estimate = pd.Series(data=np.nan, index=x.index[:window])
+			# add nan values for first #lookback indices
+			estimate = estimate.append(pd.Series(data=estimate_data, index=x.index[window:]) )
+			return estimate  
+
+	def rolling_zscore(self, Y, X, lookback):
+		"""
+		This function calculates the normalized moving spread
+		Note that moving average and moving std will have the first 39 values as np.Nan, because
+		the spread is only valid after 20 points, and the moving averages still need 20 points more
+		to define its value.
+		"""
+		
+		# Calculate moving parameters
+		# 1.beta:
+		rolling_beta = self.rolling_regression(Y, X, window=lookback)
+		# 2.spread:
+		rolling_spread = Y - rolling_beta*X
+		# 3.moving average
+		rolling_avg = rolling_spread.rolling(window=lookback,center=False).mean()
+		rolling_avg.name = 'spread_' + str(lookback) + 'mavg'
+		# 4. rolling standard deviation
+		rolling_std = rolling_spread.rolling(window=lookback, center=False).std()
+		rolling_std.name = 'rolling_std_' + str(lookback)
+		
+		# z-score
+		zscore = (rolling_spread - rolling_avg)/rolling_std
+		
+		return zscore, rolling_beta
+
+	def linear_strategy(self, Y, X, lookback):
+		"""
+		This function applies a simple pairs trading strategy based on
+		Ernie Chan's book: Algoritmic Trading.
+		
+		The number of shares for each position is set to be the negative
+		z-score
+		"""
+		
+		# z-score
+		zscore = self.rolling_zscore(Y, X, lookback)
+		numUnits = -zscore
+		
+		# Define strategy
+		# Multiply num positions inversely (-) proportionally to z-score
+		# ATTENTION: in the book the signals are inverted. The author confirms it here:
+		# http://epchan.blogspot.com/2013/05/my-new-book-on-algorithmic-trading-is.html 
+		X_positions = numUnits*(-rolling_beta*X)
+		Y_positions = numUnits*Y
+		
+		# P&L:position (-spread value) * percentage of change
+		# note that pnl is not a percentage. We multiply a position value by a percentage
+		X_returns = (X - X.shift(periods=-1))/X.shift(periods=-1)
+		Y_returns = (Y - Y.shift(periods=-1))/Y.shift(periods=-1) 
+		pnl = X_positions.shift(periods=-1)*X_returns + Y_positions.shift(periods=-1)*Y_returns
+		total_pnl = (X_positions.shift(periods=-1)*(X - X.shift(periods=-1)) +\
+					Y_positions.shift(periods=-1)*(Y - Y.shift(periods=-1))).sum()
+		ret=pnl/(abs(X_positions.shift(periods=-1))+abs(Y_positions).shift(periods=-1)) 
+		
+		return pnl, total_pnl, ret
+
+	def bollinger_band_strategy(self, Y, X, lookback):
+		"""
+		This function implements a pairs trading straegy based
+		on bollinger bands.
+		Source: Example 3.2 EC's book
+		"""
+		print("Warning: don't forget lookback (halflife) must be at least 3.")
+		
+		# define entry and exit parameters
+		entryZscore=1
+		exitZscore=0
+		
+		# obtain zscore
+		zscore, rolling_beta = self.rolling_zscore(Y, X, lookback)
+		 
+		# find long and short indices
+		numUnitsLong = zscore.copy(); 
+		numUnitsLong.iloc[0] = 0.
+		numUnitsLong[zscore < -entryZscore]=1.0
+		numUnitsLong[zscore > -exitZscore]=0.0
+		numUnitsLong[(numUnitsLong!=0.0) & (numUnitsLong!=1.0)]= np.nan
+		numUnitsLong = numUnitsLong.fillna(method='ffill')
+		
+		numUnitsShort = zscore.copy();
+		numUnitsShort.iloc[0] = 0.
+		numUnitsShort[zscore > entryZscore]=-1.0
+		numUnitsShort[zscore < exitZscore]=0.0
+		numUnitsShort[(numUnitsShort!=0.0) & (numUnitsShort!=-1.0)]= np.nan
+		numUnitsShort = numUnitsShort.fillna(method='ffill')
+		
+		# concatenate all positions
+		numUnits = numUnitsShort + numUnitsLong
+		X_positions = (numUnits*(-rolling_beta*X)).fillna(0)
+		Y_positions = (numUnits*Y)
+		# discard positions up to window size
+		X_positions[:lookback] = np.zeros(lookback); Y_positions[:lookback] = np.zeros(lookback)
+		
+		# P&L , Returns
+		X_returns = (X - X.shift(periods=1))/X.shift(periods=1)
+		Y_returns = (Y - Y.shift(periods=1))/Y.shift(periods=1) 
+		pnl_X = X_positions.shift(periods=1)*X_returns
+		pnl_Y = Y_positions.shift(periods=1)*Y_returns
+		pnl = pnl_X + pnl_Y
+		pnl[0] = 0
+		
+		ret=(pnl/(np.abs(X_positions.shift(periods=1))+np.abs(Y_positions.shift(periods=1))))#.fillna(0) # remove fillna(0) according to git version
+		
+		APR = ((np.prod(1.+ret))**(252./len(ret)))-1
+		sharpe = np.sqrt(252.)*np.mean(ret)/np.std(ret)
+		print('APR', APR)
+		print('Sharpe', sharpe)
+		
+		# checking results
+		pnl.name = 'pnl' ;  pnl_X.name = 'pnl_X'; pnl_Y.name = 'pnl_Y'
+		rolling_spread = Y-rolling_beta*X;
+		rolling_spread.name = 'spread';
+		ret.name = 'ret'
+		zscore.name = 'zscore';
+		numUnits.name = 'units';
+		summary = pd.concat([pnl_X, pnl_Y, pnl, ret, X, Y, rolling_spread, zscore, numUnits], axis=1)
+		#new_df = new_df.loc[datetime(2006,7,26):]
+		summary = summary[36:]
+		
+		return pnl, ret, summary, sharpe
+
+
+	def kalman_filter(self, y, x):
+		'''
+		This function implements a Kalman Filter for the estimation of
+		the moving hedge ratio
+		'''
+		
+		# store series for late usage
+		x_series = x.copy()
+		y_series = y.copy()
+		
+		# add constant
+		x = x.to_frame()
+		x['intercept'] = 1
+
+		x = np.array(x)
+		y = np.array(y)
+		delta=0.0001
+		Ve=0.001
+
+		yhat = np.ones(len(y))*np.nan
+		e = np.ones(len(y))*np.nan
+		Q = np.ones(len(y))*np.nan
+		R = np.zeros((2,2))
+		P = np.zeros((2,2))
+
+		beta = np.matrix(np.zeros((2,len(y)))*np.nan)
+
+		Vw=delta/(1-delta)*np.eye(2)
+
+		beta[:, 0]=0.
+
+		for t in range(len(y)):
+			if (t > 0):
+				beta[:, t]=beta[:, t-1]
+				R=P+Vw
+
+			yhat[t]=np.dot(x[t, :],beta[:, t])
+
+			tmp1 = np.matrix(x[t, :])
+			tmp2 = np.matrix(x[t, :]).T
+			Q[t] = np.dot(np.dot(tmp1,R),tmp2) + Ve
+
+			e[t]=y[t]-yhat[t] # plays spread role
+
+			K=np.dot(R,np.matrix(x[t, :]).T) / Q[t]
+
+			#print R;print x[t, :].T;print Q[t];print 'K',K;print;print
+
+			beta[:, t]=beta[:, t]+np.dot(K,np.matrix(e[t]))
+
+			tmp1 = np.matrix(x[t, :])
+			P=R-np.dot(np.dot(K,tmp1),R)
+
+			#if t==2: 
+		#print beta[0, :].T
+
+		#plt.plot(beta[0, :].T)
+		#plt.savefig('/tmp/beta1.png')
+		#plt.hold(False)
+		#plt.plot(beta[1, :].T)
+		#plt.savefig('/tmp/beta2.png')
+		#plt.hold(False)
+		#plt.plot(e[2:], 'r')
+		#plt.hold(True)
+		#plt.plot(np.sqrt(Q[2:]))
+		#plt.savefig('/tmp/Q.png')
+
+		y2 = pd.concat([x_series,y_series], axis = 1)
+
+		longsEntry=e < -1*np.sqrt(Q)
+		longsExit=e > -1*np.sqrt(Q)
+
+		shortsEntry=e > np.sqrt(Q)
+		shortsExit=e < np.sqrt(Q)
+
+		numUnitsLong = pd.Series([np.nan for i in range(len(y))])
+		numUnitsShort = pd.Series([np.nan for i in range(len(y))])
+		numUnitsLong[0]=0.
+		numUnitsShort[0]=0.
+
+		numUnitsLong[longsEntry]=1.
+		numUnitsLong[longsExit]=0
+		numUnitsLong = numUnitsLong.fillna(method='ffill')
+
+		numUnitsShort[shortsEntry]=-1.
+		numUnitsShort[shortsExit]=0
+		numUnitsShort = numUnitsShort.fillna(method='ffill')
+
+		numUnits=numUnitsLong+numUnitsShort
+
+		tmp1 = np.tile(np.matrix(numUnits).T, 2)
+		tmp2 = np.hstack((-1*beta[0, :].T,np.ones((len(y),1))))
+		positions = np.array(tmp1)*np.array(tmp2)*y2
+
+		positions = pd.DataFrame(positions)
+
+		tmp1 = np.array(positions.shift(1))
+		tmp2 = np.array(y2-y2.shift(1))
+		tmp3 = np.array(y2.shift(1))
+		pnl = np.sum(tmp1 * tmp2 / tmp3,axis=1)
+		ret = pnl / np.sum(np.abs(positions.shift(1)),axis=1)
+		ret = ret.fillna(0)
+		#ret = ret.dropna()
+		print('APR', ((np.prod(1.+ret))**(252./len(ret)))-1)
+		print('Sharpe', np.sqrt(252.)*np.mean(ret)/np.std(ret))
+		
+		return pnl, ret
