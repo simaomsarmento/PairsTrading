@@ -65,10 +65,14 @@ class SeriesAnalyser:
 
             spread = S2 - b * S1
             stats = self.check_for_stationarity(pd.Series(spread, name='Spread'))
+            zero_cross = self.zero_crossings(spread)
+            hl = self.calculate_half_life(spread)
             coint_stats[i] = {'t_statistic': stats['t_statistic'],
                               'critical_val': stats['critical_values'],
                               'p_value': stats['p_value'],
                               'coint_coef': b,
+                              'zero_cross': zero_cross,
+                              'half_life': int(round(hl)),
                               'spread': spread,
                               'Y': S2,
                               'X': S1
@@ -84,13 +88,17 @@ class SeriesAnalyser:
 
         return coint_result
 
-    def find_cointegrated_pairs(self, data, threshold, min_half_life=5):
+    def find_cointegrated_pairs(self, data, threshold, min_half_life=5, min_zero_crossings=0):
         """
-        This function receives a df with the different securities as columns, and aims to find cointegrated
+        This function receives a df with the different securities as columns, and aims to find tradable
         pairs within this world.
+        Tradable pairs are those that verify:
+            - cointegration
+            - minimium half life
+            - minimium zero crossings
         : data - df with price data as columns
         : threshold - pvalue threshold for a pair to be cointegrated
-        : min_half_life - minimium half life value of the spreadto consider the pair
+        : min_half_life - minimium half life value of the spread to consider the pair
         """
         n = data.shape[1]
         keys = data.keys()
@@ -101,10 +109,12 @@ class SeriesAnalyser:
                 S2 = data[keys[j]]
                 result = self.check_for_cointegration(S1, S2)
                 pvalue = result['p_value']
-                if pvalue < threshold:
+                if pvalue < threshold: # verifies required pvalue
                     hl = self.calculate_half_life(result['spread'])
-                    if hl > min_half_life:
-                        pairs.append((keys[i], keys[j], result))
+                    if hl >= min_half_life: # verifies required half life
+                        if result['zero_cross'] >= min_zero_crossings: # verifies required zero crossings
+                            pairs.append((keys[i], keys[j], result))
+
         return pairs
 
     def zscore(self, series):
@@ -167,8 +177,18 @@ class SeriesAnalyser:
 
         # Apply the formula to calculate the test
         n = len(ts)
-        mu = sum(ts[1:n] - ts[:n - 1]) / n;
-        m = (n - lag + 1) * (1 - lag / n);
+        mu = sum(ts[1:n] - ts[:n - 1]) / n
+        m = (n - lag + 1) * (1 - lag / n)
         b = sum(np.square(ts[1:n] - ts[:n - 1] - mu)) / (n - 1)
         t = sum(np.square(ts[lag:n] - ts[:n - lag] - lag * mu)) / m
-        return t / (lag * b);
+        return t / (lag * b)
+
+    def zero_crossings(self, x):
+        """
+        Function that counts the number of zero crossings of a given signal
+        :param x: the signal to be analyzed
+        """
+        x = x - x.mean()
+        zero_crossings = sum(1 for i, _ in enumerate(x) if (i + 1 < len(x)) if ((x[i] * x[i + 1] < 0) or (x[i] == 0)))
+
+        return zero_crossings

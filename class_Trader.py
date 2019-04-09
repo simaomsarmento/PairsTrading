@@ -113,17 +113,20 @@ class Trader:
 
         return pnl, total_pnl, ret
 
-    def bollinger_band_strategy(self, Y, X, lookback):
+    def bollinger_band_strategy(self, Y, X, lookback, entry_multiplier=1, exit_multiplier=0):
         """
-        This function implements a pairs trading straegy based
+        This function implements a pairs trading strategy based
         on bollinger bands.
         Source: Example 3.2 EC's book
+        : Y & X: time series composing the spread
+        : lookback : Lookback period
+        : entry_multiplier : defines the multiple of std deviation used to enter a position
+        : exit_multiplier: defines the multiple of std deviation used to exit a position
         """
         print("Warning: don't forget lookback (halflife) must be at least 3.")
 
-        # define entry and exit parameters
-        entryZscore=1
-        exitZscore=0
+        entryZscore = entry_multiplier
+        exitZscore = exit_multiplier
 
         # obtain zscore
         zscore, rolling_beta = self.rolling_zscore(Y, X, lookback)
@@ -158,28 +161,32 @@ class Trader:
         pnl = pnl_X + pnl_Y
         pnl[0] = 0
 
-        ret=(pnl/(np.abs(X_positions.shift(periods=1))+np.abs(Y_positions.shift(periods=1))))#.fillna(0) # remove fillna(0) according to git version
+        ret = (pnl/(np.abs(X_positions.shift(periods=1))+np.abs(Y_positions.shift(periods=1))))
+        # use without fillna(0) according to git version, so that when position is not entered it is not taken into
+        # account when calculating the avg return
+        ret_0 = ret.fillna(0)
+        ret = ret_0
 
         APR = ((np.prod(1.+ret))**(252./len(ret)))-1
-        sharpe = np.sqrt(252.)*np.mean(ret)/np.std(ret)
+        sharpe = np.sqrt(252.)*np.mean(ret)/np.std(ret) # should the mean include moments of no holding?
         print('APR', APR)
         print('Sharpe', sharpe)
 
         # checking results
         pnl.name = 'pnl' ;  pnl_X.name = 'pnl_X'; pnl_Y.name = 'pnl_Y'
-        rolling_spread = Y-rolling_beta*X;
-        rolling_spread.name = 'spread';
-        ret.name = 'ret'
-        zscore.name = 'zscore';
-        numUnits.name = 'units';
-        summary = pd.concat([pnl_X, pnl_Y, pnl, ret, X, Y, rolling_spread, zscore, numUnits], axis=1)
+        rolling_spread = Y-rolling_beta*X
+        rolling_spread.name = 'spread'
+        ret_0.name = 'ret'
+        zscore.name = 'zscore'
+        numUnits.name = 'units'
+        summary = pd.concat([pnl_X, pnl_Y, pnl, ret_0, X, Y, rolling_spread, zscore, numUnits], axis=1)
         #new_df = new_df.loc[datetime(2006,7,26):]
         summary = summary[36:]
 
-        return pnl, ret, summary, sharpe
+        return pnl, ret_0, summary, sharpe
 
 
-    def kalman_filter(self, y, x):
+    def kalman_filter(self, y, x, entry_multiplier=1, exit_multiplier=1):
         '''
         This function implements a Kalman Filter for the estimation of
         the moving hedge ratio
@@ -248,11 +255,11 @@ class Trader:
 
         y2 = pd.concat([x_series,y_series], axis = 1)
 
-        longsEntry=e < -1*np.sqrt(Q)
-        longsExit=e > -1*np.sqrt(Q)
+        longsEntry=e < -entry_multiplier*np.sqrt(Q)
+        longsExit=e > -exit_multiplier*np.sqrt(Q)
 
-        shortsEntry=e > np.sqrt(Q)
-        shortsExit=e < np.sqrt(Q)
+        shortsEntry=e > entry_multiplier*np.sqrt(Q)
+        shortsExit=e < exit_multiplier*np.sqrt(Q)
 
         numUnitsLong = pd.Series([np.nan for i in range(len(y))])
         numUnitsShort = pd.Series([np.nan for i in range(len(y))])
@@ -280,12 +287,27 @@ class Trader:
         tmp3 = np.array(y2.shift(1))
         pnl = np.sum(tmp1 * tmp2 / tmp3,axis=1)
         ret = pnl / np.sum(np.abs(positions.shift(1)),axis=1)
-        ret = ret.fillna(0)
+        ret_0 = ret.fillna(0)
+        ret = ret_0
         #ret = ret.dropna()
+
+        print('Ret: ', np.mean(ret))
+        print('Ret0: ', np.mean(ret_0)) # should the mean include moments of no holding?
+        print(len(ret))
+
 
         apr = ((np.prod(1.+ret))**(252./len(ret)))-1
         sharpe = np.sqrt(252.) * np.mean(ret) / np.std(ret)
         print('APR', apr)
         print('Sharpe', sharpe)
 
-        return pnl, ret, sharpe
+        # get summary df
+        threshold_Q = pd.Series(np.sqrt(Q)); threshold_Q.name = 'sqrt(Q)'
+        pnl = pd.Series(pnl); pnl.name = 'PNL'
+        e = pd.Series(e); e.name = 'e'
+        ret.name = 'ret'; numUnits.name = 'numUnits'
+        x_series = x_series.reset_index(drop=True); y_series = y_series.reset_index(drop=True); ret = ret.reset_index()
+        summary = pd.concat([pnl, ret, x_series, y_series, e, threshold_Q, numUnits], axis=1)
+        summary = summary[30:]
+
+        return pnl, ret_0, summary, sharpe
