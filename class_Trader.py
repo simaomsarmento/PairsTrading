@@ -168,9 +168,13 @@ class Trader:
         ret = ret_0
 
         APR = ((np.prod(1.+ret))**(252./len(ret)))-1
-        sharpe = np.sqrt(252.)*np.mean(ret)/np.std(ret) # should the mean include moments of no holding?
+        if np.std(ret) == 0:
+            sharpe = 0
+        else:
+            sharpe = np.sqrt(252.)*np.mean(ret)/np.std(ret) # should the mean include moments of no holding?
         print('APR', APR)
         print('Sharpe', sharpe)
+
 
         # checking results
         pnl.name = 'pnl' ;  pnl_X.name = 'pnl_X'; pnl_Y.name = 'pnl_Y'
@@ -184,6 +188,81 @@ class Trader:
         summary = summary[36:]
 
         return pnl, ret_0, summary, sharpe
+
+
+    def bollinger_bands_ec(self, Y, X, lookback, entry_multiplier=1, exit_multiplier=0):
+
+        df = pd.concat([Y, X], axis = 1)
+        df = df.reset_index()
+        df['hedgeRatio'] = np.nan
+        for t in range(lookback, len(df)):
+            x = np.array(X)[t - lookback:t]
+            x = sm.add_constant(x)
+            y = np.array(Y)[t - lookback:t]
+            df.loc[t, 'hedgeRatio'] = sm.OLS(y, x).fit().params[1]
+
+        cols = [X.name, Y.name]
+
+        yport = np.ones(df[cols].shape);
+        yport[:, 0] = -df['hedgeRatio']
+        yport = yport * df[cols]
+
+        yport = yport[X.name] + yport[Y.name]
+        data_mean = pd.rolling_mean(yport, window=20)
+        data_std = pd.rolling_std(yport, window=20)
+        zScore = (yport - data_mean) / data_std
+
+        entryZscore = entry_multiplier
+        exitZscore = exit_multiplier
+
+        longsEntry = zScore < -entryZscore
+        longsExit = zScore > -exitZscore
+        shortsEntry = zScore > entryZscore
+        shortsExit = zScore < exitZscore
+
+        numUnitsLong = pd.Series([np.nan for i in range(len(df))])
+        numUnitsShort = pd.Series([np.nan for i in range(len(df))])
+        numUnitsLong[0] = 0.
+        numUnitsShort[0] = 0.
+
+        numUnitsLong[longsEntry] = 1.0
+        numUnitsLong[longsExit] = 0.0
+        numUnitsLong = numUnitsLong.fillna(method='ffill')
+
+        numUnitsShort[shortsEntry] = -1.0
+        numUnitsShort[shortsExit] = 0.0
+        numUnitsShort = numUnitsShort.fillna(method='ffill')
+        df['numUnits'] = numUnitsShort + numUnitsLong
+
+        tmp1 = np.ones(df[cols].shape) * np.array([df['numUnits']]).T
+        tmp2 = np.ones(df[cols].shape)
+        tmp2[:, 0] = -df['hedgeRatio']
+        positions = pd.DataFrame(tmp1 * tmp2 * df[cols]).fillna(0)
+        pnl = positions.shift(1) * (df[cols] - df[cols].shift(1)) / df[cols].shift(1)
+        pnl = pnl.sum(axis=1)
+        ret = pnl / np.sum(np.abs(positions.shift(1)), axis=1)
+        ret = ret.fillna(0)
+        apr = ((np.prod(1. + ret)) ** (252. / len(ret))) - 1
+        print('APR', apr)
+        if np.std(ret) == 0:
+            sharpe = 0
+        else:
+            sharpe = np.sqrt(252.)*np.mean(ret)/np.std(ret) # should the mean include moments of no holding?
+        print('Sharpe', sharpe)
+
+        # checking results
+        X = X.reset_index(drop=True)
+        Y = Y.reset_index()
+        pnl.name = 'pnl';
+        rolling_spread = yport
+        rolling_spread.name = 'spread'
+        zScore.name = 'zscore'
+        summary = pd.concat([pnl, X, Y, rolling_spread, zScore], axis=1)
+        summary.index = summary['Date']
+        # new_df = new_df.loc[datetime(2006,7,26):]
+        summary = summary[36:]
+
+        return pnl, ret, summary, sharpe
 
 
     def kalman_filter(self, y, x, entry_multiplier=1, exit_multiplier=1):
@@ -290,10 +369,6 @@ class Trader:
         ret_0 = ret.fillna(0)
         ret = ret_0
         #ret = ret.dropna()
-
-        print('Ret: ', np.mean(ret))
-        print('Ret0: ', np.mean(ret_0)) # should the mean include moments of no holding?
-        print(len(ret))
 
 
         apr = ((np.prod(1.+ret))**(252./len(ret)))-1

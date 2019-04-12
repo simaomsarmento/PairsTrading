@@ -1,9 +1,12 @@
 import numpy as np
 import pandas as pd
 
-import statsmodels
 import statsmodels.api as sm
 from statsmodels.tsa.stattools import coint, adfuller
+
+from sklearn.cluster import DBSCAN
+from sklearn.decomposition import PCA
+from sklearn import preprocessing
 
 import matplotlib.pyplot as plt
 
@@ -13,9 +16,7 @@ np.random.seed(107)
 
 class SeriesAnalyser:
     """
-    This class contains a set of pairs trading strategies along
-    with some auxiliary functions
-
+    This class contains a set of functions to deal with time series analysis.
     """
 
     def __init__(self):
@@ -192,3 +193,27 @@ class SeriesAnalyser:
         zero_crossings = sum(1 for i, _ in enumerate(x) if (i + 1 < len(x)) if ((x[i] * x[i + 1] < 0) or (x[i] == 0)))
 
         return zero_crossings
+
+    def apply_PCA(self, n_components, df):
+        """
+        This function applies Principal Component Analysis to the df given as
+        parameter
+
+        :param n_components: number of principal components
+        :param df: dataframe containing time series for analysis
+        :return: reduced normalized and transposed df
+        """
+
+        if n_components > df.shape[1]:
+            print("ERROR: number of components larger than samples...")
+            exit()
+
+        pca = PCA(n_components=n_components)
+        pca.fit(df)
+        explained_variance = pca.explained_variance_
+
+        # standardize
+        X = preprocessing.StandardScaler().fit_transform(pca.components_.T)
+        print('New shape: ', X.shape)
+
+        return X, explained_variance
