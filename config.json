@@ -1,0 +1,31 @@
+{
+    "dataset": {
+        "path": "data/etfs/commodity_ETFs.xlsx",
+        "ticker_attribute": "Ticker",
+        "initial_date": "01-06-2017",
+        "final_date": "01-01-2018",
+        "data_source": "yahoo",
+        "nan_threshold": 0
+    },
+    "PCA": {
+        "N_COMPONENTS": 14
+    },
+    "clustering": {
+        "algo": "DBSCAN",
+        "epsilon": 0.4,
+        "min_samples": 2
+    },
+    "pair_restrictions": {
+        "min_half_life": 5,
+        "min_zero_crossings": 12,
+        "p_value_threshold": 0.05,
+        "hurst_threshold": 0.5
+    },
+    "trading": {
+        "strategy": "bollinger",
+        "implementation": "standard",
+        "lookback_multiplier": 2,
+        "entry_multiplier": 1,
+        "exit_multiplier": 0
+    }
+}

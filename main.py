@@ -2,7 +2,7 @@
 This script does the following:
     1- Uploads relevant price series into a Dataframe (import class_DataReader)
     2- Performs dimensionality reduction and unsupervised learning on the time series (import class_SeriesAnalyser)
-    3- Find good candidates
+    3- Finds good candidates
     4- Implements a pairs trading strategy (import class_Trader)
 """
 
@@ -16,38 +16,9 @@ np.random.seed(107)
 
 if __name__ == "__main__":
 
-    # create json file
-    dataset = {'path': 'data/etfs/commodity_ETFs.xlsx',
-               'ticker_attribute': 'Ticker',
-               'initial_date': '01-06-2017',
-               'final_date': '01-01-2018',
-               'data_source': 'yahoo',
-               'nan_threshold': 0
-               }
-    PCA = {'N_COMPONENTS': 14}
-    clustering = {
-                  'algo': 'DBSCAN',
-                  'epsilon': 0.4,
-                  'min_samples': 2
-                  }
-    pair_restrictions = {
-                         'min_half_life': 5,
-                         'min_zero_crossings': 12,
-                         'p_value_threshold': 0.05,
-                         'hurst_threshold': 0.5
-                         }
-
-    config = {'dataset': dataset,
-              'PCA': PCA,
-              'clustering': clustering,
-              'pair_restrictions': pair_restrictions
-              }
-    with open('config.json', 'w') as fp:
-        json.dump(config, fp, indent=4)
-
     # Read configuration file
-    #with open('config.json', 'r') as f:
-    #    config = json.load(f)
+    with open('config.json', 'r') as f:
+        config = json.load(f)
 
     # 1. UPLOAD DATASET
     # initialize data processor
@@ -86,5 +57,25 @@ if __name__ == "__main__":
                                                                 p_value_threshold=config['pair_restrictions']['p_value_threshold'],
                                                                 hurst_threshold=config['pair_restrictions']['hurst_threshold']
                                                                 )
+
+    # 4. Apply trading strategy
+    trader = class_Trader.Trader()
+
+    trading_strategy = config['trading']['strategy']
+    if 'bollinger' in trading_strategy:
+        sharpe_results_bollinger, cum_returns_bollinger, failed_pairs = trader.apply_bollinger_strategy(
+                                                                                                pairs=pairs,
+                                                                                                lookback_multiplier=config['trading']['lookback_multiplier'],
+                                                                                                entry_multiplier=config['trading']['entry_multiplier'],
+                                                                                                exit_multiplier=config['trading']['exit_multiplier'],
+                                                                                                implementation=config['trading']['implementation']
+                                                                                                )
+    if 'kalman' in trading_strategy:
+        sharpe_results_kalman, cum_returns_kalman = trader.apply_kalman_strategy(pairs,
+                                                                                 entry_multiplier=config['trading']['entry_multiplier'],
+                                                                                 exit_multiplier=config['trading']['exit_multiplier']
+                                                                                 )
+
+
 
 

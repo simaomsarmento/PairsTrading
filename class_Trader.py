@@ -113,7 +113,7 @@ class Trader:
 
         return pnl, total_pnl, ret
 
-    def bollinger_band_strategy(self, Y, X, lookback, entry_multiplier=1, exit_multiplier=0):
+    def bollinger_bands(self, Y, X, lookback, entry_multiplier=1, exit_multiplier=0):
         """
         This function implements a pairs trading strategy based
         on bollinger bands.
@@ -265,7 +265,7 @@ class Trader:
         return pnl, ret, summary, sharpe
 
 
-    def kalman_filter(self, y, x, entry_multiplier=1, exit_multiplier=1):
+    def kalman_filter(self, y, x, entry_multiplier=1.0, exit_multiplier=1.0):
         '''
         This function implements a Kalman Filter for the estimation of
         the moving hedge ratio
@@ -386,3 +386,67 @@ class Trader:
         summary = summary[30:]
 
         return pnl, ret_0, summary, sharpe
+
+    def apply_bollinger_strategy(self, pairs, lookback_multiplier, entry_multiplier=2, exit_multiplier=0.5,
+                                 implementation='standard'):
+        """
+
+        :param pairs:
+        :param lookback_multiplier:
+        :param entry_multiplier:
+        :param exit_multiplier:
+        :param implementation:
+        :return:
+        """
+
+        sharpe_results = []
+        cum_returns = []
+        negative_performance = []  # aux variable to store non profitable pairs
+
+        for pair in pairs:
+            print('\n\n{},{}'.format(pair[0], pair[1]))
+            coint_result = pair[2]
+            lookback = lookback_multiplier * (coint_result['half_life'])
+
+            if lookback >= len(coint_result['Y']):
+                print('Error: lookback is larger than length of the series')
+
+            # run 1 of 2 possible implementations
+            if implementation == 'standard':
+                pnl, ret, summary, sharpe = self.bollinger_bands(coint_result['Y'], coint_result['X'],
+                                                                   lookback, entry_multiplier, exit_multiplier)
+                cum_returns.append((np.cumprod(1 + ret) - 1)[-1] * 100)
+            else:
+                pnl, ret, summary, sharpe = self.bollinger_bands_ec(coint_result['Y'], coint_result['X'],
+                                                                      lookback, entry_multiplier, exit_multiplier)
+                cum_returns.append((np.cumprod(1 + ret) - 1).iloc[-1] * 100)
+
+            sharpe_results.append(sharpe)
+            if sharpe < 0:
+                negative_performance.append((pair, summary))
+
+        return sharpe_results, cum_returns, negative_performance
+
+    def apply_kalman_strategy(self, pairs, entry_multiplier=2, exit_multiplier=0.5):
+        """
+        This function caals the kalman filter implementation for every pair.
+
+        :param entry_multiplier: threshold that defines where to enter a position
+        :param exit_multiplier: threshold that defines where to exit a position
+
+        :return: sharpe ratio results
+        :return: cumulative returns
+        """
+        sharpe_results = []
+        cum_returns = []
+        for pair in pairs:
+            print('\n\n{},{}'.format(pair[0], pair[1]))
+            coint_result = pair[2]
+            pnl, ret, summary, sharpe = self.kalman_filter(y=coint_result['Y'], x=coint_result['X'],
+                                                           entry_multiplier=entry_multiplier,
+                                                           exit_multiplier=exit_multiplier
+                                                           )
+            cum_returns.append((np.cumprod(1 + ret) - 1)[-1] * 100)
+            sharpe_results.append(sharpe)
+
+        return sharpe_results, cum_returns
