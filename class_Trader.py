@@ -391,12 +391,15 @@ class Trader:
                                  implementation='standard'):
         """
 
-        :param pairs:
-        :param lookback_multiplier:
-        :param entry_multiplier:
-        :param exit_multiplier:
-        :param implementation:
-        :return:
+        :param pairs: pairs to trade
+        :param lookback_multiplier: half life multiplier to define lookback period
+        :param entry_multiplier: multiplier to define position entry level
+        :param exit_multiplier: multiplier to define position exit level
+        :param implementation: either "ec" or "standard"
+
+        :return: sharpe ratio results
+        :return: cumulative returns
+        :return: pairs which had a negative sharpe ratio
         """
 
         sharpe_results = []
@@ -442,7 +445,8 @@ class Trader:
         for pair in pairs:
             print('\n\n{},{}'.format(pair[0], pair[1]))
             coint_result = pair[2]
-            pnl, ret, summary, sharpe = self.kalman_filter(y=coint_result['Y'], x=coint_result['X'],
+            pnl, ret, summary, sharpe = self.kalman_filter(y=coint_result['Y'],
+                                                           x=coint_result['X'],
                                                            entry_multiplier=entry_multiplier,
                                                            exit_multiplier=exit_multiplier
                                                            )
