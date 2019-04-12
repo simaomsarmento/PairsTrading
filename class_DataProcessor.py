@@ -34,7 +34,7 @@ class DataProcessor:
         unique_df = df[~df.duplicated(subset=['Ticker'], keep='first')].sort_values(['Ticker'])
         tickers = unique_df.Ticker.unique()
 
-        return unique_df, tickers
+        return df, unique_df, tickers
 
     def read_tickers_prices(self, tickers, initial_date, final_date, data_source):
         """
@@ -70,6 +70,7 @@ class DataProcessor:
         :param dataset: dictionary containing tickers as keys and corresponding price series
         :param threshold: threshold for number of Nan Values
         :return: df with tickers as columns
+        :return: df_clean with tickers as columns, and columns with null values dropped
         """
 
         first_count = True
@@ -81,9 +82,9 @@ class DataProcessor:
                 else:
                     df = pd.concat([df, dataset[k]], axis=1)
 
-        df = self.remove_tickers_with_nan(df, threshold)
+        df_clean = self.remove_tickers_with_nan(df, threshold)
 
-        return df
+        return df, df_clean
 
     def remove_tickers_with_nan(self, df, threshold):
         """
@@ -98,4 +99,16 @@ class DataProcessor:
         print('From now on, we are only considering ' + str(df.shape[1]) + ' ETFs')
 
         return df
+
+    def get_return_series(self, df_prices):
+        """
+        This function calculates the return series of a given price series
+
+        :param prices: time series with prices
+        :return: return series
+        """
+        df_returns = df_prices.pct_change()
+        df_returns = df_returns.iloc[1:]
+
+        return df_returns
 

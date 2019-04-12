@@ -88,7 +88,7 @@ class SeriesAnalyser:
 
         return coint_result
 
-    def find_cointegrated_pairs(self, data, threshold, min_half_life=5, min_zero_crossings=0):
+    def find_pairs(self, data, p_value_threshold, min_half_life=5, min_zero_crossings=0, hurst_threshold=0.5):
         """
         This function receives a df with the different securities as columns, and aims to find tradable
         pairs within this world.
@@ -109,11 +109,11 @@ class SeriesAnalyser:
                 S2 = data[keys[j]]
                 result = self.check_for_cointegration(S1, S2)
                 pvalue = result['p_value']
-                if pvalue < threshold: # verifies required pvalue
+                if pvalue < p_value_threshold: # verifies required pvalue
                     hl = self.calculate_half_life(result['spread'])
                     if hl >= min_half_life: # verifies required half life
                         if result['zero_cross'] >= min_zero_crossings: # verifies required zero crossings
-                            if self.hurst(result['spread'])<0.5: # verifies hurst exponent
+                            if self.hurst(result['spread'])<hurst_threshold: # verifies hurst exponent
                                 pairs.append((keys[i], keys[j], result))
 
         return pairs
@@ -246,3 +246,38 @@ class SeriesAnalyser:
         print("Pairs to evaluate: %d" % (counts * (counts - 1) / 2).sum())
 
         return clustered_series_all, clustered_series, counts, clf
+
+    def get_candidate_pairs(self, clustered_series, pricing_df, n_clusters, min_half_life=5,
+                            min_zero_crosings=20, p_value_threshold=0.05, hurst_threshold=0.5):
+        """
+        This function looks for tradable pairs over the clusters formed previously.
+
+        :param clustered_series: series with cluster label info
+        :param pricing_df: df with price series
+        :param n_clusters: number of clusters
+        :param min_half_life: min half life of a time series to be considered as candidate
+        :param min_zero_crosings: min number of zero crossings (or mean crossings)
+        :param p_value_threshold: p_value to check during cointegration test
+        :param hurst_threshold: max hurst exponent value
+
+        :return: list of pairs and its info
+        :return: list of unique tickers identified in the candidate pairs universe
+        """
+
+        total_pairs = []
+        for clust in range(n_clusters):
+            symbols = list(clustered_series[clustered_series == clust].index)
+            cluster_pricing = pricing_df[symbols]
+            pairs = self.find_pairs(cluster_pricing,
+                                    p_value_threshold,
+                                    min_half_life,
+                                    min_zero_crosings,
+                                    hurst_threshold)
+            total_pairs.extend(pairs)
+
+        print('Found {} pairs'.format(len(total_pairs)))
+
+        unique_tickers = np.unique([(element[0], element[1]) for element in total_pairs])
+        print('The pairs contain {} unique tickers'.format(len(unique_tickers)))
+
+        return total_pairs, unique_tickers
