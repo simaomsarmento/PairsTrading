@@ -95,7 +95,7 @@ class DataProcessor:
         to_remove = list(null_values[null_values > threshold].index)
         df = df.drop(columns=to_remove)
 
-        print('From now on, we are only considering ' + str(len(df)) + ' ETFs')
+        print('From now on, we are only considering ' + str(df.shape[1]) + ' ETFs')
 
         return df
 

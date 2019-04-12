@@ -24,7 +24,14 @@ if __name__ == "__main__":
                'nan_threshold': 0
                }
     PCA = {'N_COMPONENTS': 14}
-    config = {'dataset': dataset, 'PCA': PCA}
+    clustering = {'algo': 'DBSCAN',
+                  'epsilon': 0.4,
+                  'min_samples': 2
+                  }
+
+    config = {'dataset': dataset,
+              'PCA': PCA,
+              'clustering': clustering}
     with open('config.json', 'w') as fp:
         json.dump(config, fp, indent=4)
 
@@ -34,8 +41,6 @@ if __name__ == "__main__":
 
     # read tickers
     df_tickers, tickers = data_processor.read_ticker_excel(ticker_attribute=config['dataset']['ticker_attribute'])
-    ######WARNING
-    tickers = tickers[:25]
 
     # get price series for tickers
     ticker_prices = data_processor.read_tickers_prices(tickers,
@@ -51,9 +56,14 @@ if __name__ == "__main__":
 
     # 2. Apply PCA and clustering
     series_analyser = class_SeriesAnalyser.SeriesAnalyser()
+    # PCA
     X, explained_variance = series_analyser.apply_PCA(config['PCA']['N_COMPONENTS'], df_returns)
-
-
+    # Clustering
+    clustered_series_all, clustered_series, counts, clf = series_analyser.apply_DBSCAN(config['clustering']['epsilon'],
+                                                                                       config['clustering']['min_samples'],
+                                                                                       X,
+                                                                                       df_returns)
+    print(counts)
 
 
 

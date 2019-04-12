@@ -53,8 +53,8 @@ class SeriesAnalyser:
         coint_stats = [0] * 2
 
         for i, pair in enumerate(pairs):
-            S1 = pair[0];
-            S2 = pair[1];
+            S1 = pair[0]
+            S2 = pair[1]
 
             series_name = S1.name
             S1 = sm.add_constant(S1)
@@ -82,10 +82,9 @@ class SeriesAnalyser:
         # select lowest t-statistic as representative test
         if abs(coint_stats[0]['t_statistic']) > abs(coint_stats[1]['t_statistic']):
             coint_result = coint_stats[0]
-        # print('Spread: Y - b*X')
+
         else:
             coint_result = coint_stats[1]
-        # print('Spread: X - b*Y')
 
         return coint_result
 
@@ -114,7 +113,8 @@ class SeriesAnalyser:
                     hl = self.calculate_half_life(result['spread'])
                     if hl >= min_half_life: # verifies required half life
                         if result['zero_cross'] >= min_zero_crossings: # verifies required zero crossings
-                            pairs.append((keys[i], keys[j], result))
+                            if self.hurst(result['spread'])<0.5: # verifies hurst exponent
+                                pairs.append((keys[i], keys[j], result))
 
         return pairs
 
@@ -217,3 +217,32 @@ class SeriesAnalyser:
         print('New shape: ', X.shape)
 
         return X, explained_variance
+
+    def apply_DBSCAN(self, eps, min_samples, X, df_returns):
+        """
+        This function applies a DBSCAN clustering algo
+
+        :param eps: min distance for a sample to be within the cluster
+        :param min_samples: min_samples to consider a cluster
+        :param X: data
+
+        :return: clustered_series_all: series with all tickers and labels
+        :return: clustered_series: series with tickers belonging to a cluster
+        :return: counts: counts of each cluster
+        :return: clf object
+        """
+        clf = DBSCAN(eps=eps, min_samples=min_samples)
+        print(clf)
+
+        clf.fit(X)
+        labels = clf.labels_
+        n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
+        print("\nClusters discovered: %d" % n_clusters_)
+
+        clustered_series_all = pd.Series(index=df_returns.columns, data=labels.flatten())
+        clustered_series = clustered_series_all[clustered_series_all != -1]
+
+        counts = clustered_series.value_counts()
+        print("Pairs to evaluate: %d" % (counts * (counts - 1) / 2).sum())
+
+        return clustered_series_all, clustered_series, counts, clf
