@@ -130,21 +130,40 @@ class Trader:
 
         # obtain zscore
         zscore, rolling_beta = self.rolling_zscore(Y, X, lookback)
+        zscore_array = np.asarray(zscore)
 
         # find long and short indices
-        numUnitsLong = zscore.copy();
+        numUnitsLong = pd.Series([np.nan for i in range(len(Y))])
         numUnitsLong.iloc[0] = 0.
-        numUnitsLong[zscore < -entryZscore]=1.0
-        numUnitsLong[zscore > -exitZscore]=0.0
-        numUnitsLong[(numUnitsLong!=0.0) & (numUnitsLong!=1.0)]= np.nan
+        long_entries = self.cross_threshold(zscore_array, -entryZscore, 'down', 'entry')
+        numUnitsLong[long_entries] = 1.0
+        long_exits = self.cross_threshold(zscore_array, -exitZscore, 'up')
+        numUnitsLong[long_exits] = 0.0
         numUnitsLong = numUnitsLong.fillna(method='ffill')
+        numUnitsLong.index = zscore.index
+        #
+        # numUnitsLong = zscore.copy();
+        # numUnitsLong.iloc[0] = 0.
+        # numUnitsLong[zscore < -entryZscore]=1.0
+        # numUnitsLong[zscore > -exitZscore]=0.0
+        # numUnitsLong[(numUnitsLong!=0.0) & (numUnitsLong!=1.0)]= np.nan
+        # numUnitsLong = numUnitsLong.fillna(method='ffill')
 
-        numUnitsShort = zscore.copy();
+        numUnitsShort = pd.Series([np.nan for i in range(len(Y))])
         numUnitsShort.iloc[0] = 0.
-        numUnitsShort[zscore > entryZscore]=-1.0
-        numUnitsShort[zscore < exitZscore]=0.0
-        numUnitsShort[(numUnitsShort!=0.0) & (numUnitsShort!=-1.0)]= np.nan
+        short_entries = self.cross_threshold(zscore_array, entryZscore, 'up', 'entry')
+        numUnitsShort[short_entries] = -1.0
+        short_exits = self.cross_threshold(zscore_array, exitZscore, 'down')
+        numUnitsShort[short_exits] = 0.0
         numUnitsShort = numUnitsShort.fillna(method='ffill')
+        numUnitsShort.index = zscore.index
+        #
+        # numUnitsShort = zscore.copy();
+        # numUnitsShort.iloc[0] = 0.
+        # numUnitsShort[zscore > entryZscore]=-1.0
+        # numUnitsShort[zscore < exitZscore]=0.0
+        # numUnitsShort[(numUnitsShort!=0.0) & (numUnitsShort!=-1.0)]= np.nan
+        # numUnitsShort = numUnitsShort.fillna(method='ffill')
 
         # concatenate all positions
         numUnits = numUnitsShort + numUnitsLong
@@ -454,3 +473,70 @@ class Trader:
             sharpe_results.append(sharpe)
 
         return sharpe_results, cum_returns
+
+    def cross_threshold(self, array, threshold, direction='up', position='exit'):
+        """
+        This function returns the indices corresponding to the positions where a given threshold
+        is crossed
+
+        :param array: np.array with time series
+        :param threshold: threshold to be crossed
+        :param direction: going up or down
+        :param mode: auxiliar variable indicating whether we are checking for a position entry or exit
+        :return: indices where threshold is crossed going in the desired direction
+        """
+
+        # add index for first element transitioning from None value, in case its above/below threshold
+        # only add when checking if position should be entered.
+        initial_index = []
+        first_index, first_element = next((item[0], item[1]) for item in enumerate(array) if not np.isnan(item[1]))
+        if position == 'entry':
+            if direction == 'up':
+                if first_element > threshold:
+                    initial_index.append(first_index)
+            elif direction == 'down':
+                if first_element < threshold:
+                    initial_index.append(first_index)
+            else:
+                print('The series must be either going "up" or "down", please insert valid direction')
+        initial_index = np.asarray(initial_index, dtype='int')
+
+        # add small decimal case to consider only strictly larger/smaller
+        if threshold > 0:
+            threshold = threshold + 0.000000001
+        else:
+            threshold = threshold - 0.000000001
+        array = array - threshold
+
+        # add other indices
+        indices = np.where(np.diff(np.sign(array)))[0] + 1
+        # only consider indices after first element which is not Nan
+        indices = indices[indices > first_index]
+
+        direction_indices = indices
+        for index in indices:
+            if direction == 'up':
+                if array[index] < array[index - 1]:
+                    direction_indices = direction_indices[direction_indices != index]
+            elif direction == 'down':
+                if array[index] > array[index - 1]:
+                    direction_indices = direction_indices[direction_indices != index]
+        # concatenate
+        direction_indices = np.concatenate((initial_index, direction_indices), axis=0)
+
+        return direction_indices
+
+    def correlation_filter(self, lookback, lag, correlation_threshold):
+        """
+        This function implements a filter proposed by Dunnis 2005.
+        The main idea is tracking how the correlation is varying in a moving period, so that we
+        are able to identify when the two legs of the spread are moving in opposing directions
+        by analyzing how the correlation values are varying.
+
+        :param lookback: lookback period
+        :param lag: lag to compare the correlaiton evolution
+        :param correlation_threshold: minimium difference to consider change
+        :return: indices for position entry
+        """
+
+        return None
