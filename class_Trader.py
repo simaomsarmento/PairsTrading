@@ -113,7 +113,7 @@ class Trader:
 
         return pnl, total_pnl, ret
 
-    def bollinger_bands(self, Y, X, lookback, entry_multiplier=1, exit_multiplier=0):
+    def bollinger_bands(self, Y, X, lookback, entry_multiplier=1, exit_multiplier=0, trading_filter=None):
         """
         This function implements a pairs trading strategy based
         on bollinger bands.
@@ -141,13 +141,6 @@ class Trader:
         numUnitsLong[long_exits] = 0.0
         numUnitsLong = numUnitsLong.fillna(method='ffill')
         numUnitsLong.index = zscore.index
-        #
-        # numUnitsLong = zscore.copy();
-        # numUnitsLong.iloc[0] = 0.
-        # numUnitsLong[zscore < -entryZscore]=1.0
-        # numUnitsLong[zscore > -exitZscore]=0.0
-        # numUnitsLong[(numUnitsLong!=0.0) & (numUnitsLong!=1.0)]= np.nan
-        # numUnitsLong = numUnitsLong.fillna(method='ffill')
 
         numUnitsShort = pd.Series([np.nan for i in range(len(Y))])
         numUnitsShort.iloc[0] = 0.
@@ -157,16 +150,21 @@ class Trader:
         numUnitsShort[short_exits] = 0.0
         numUnitsShort = numUnitsShort.fillna(method='ffill')
         numUnitsShort.index = zscore.index
-        #
-        # numUnitsShort = zscore.copy();
-        # numUnitsShort.iloc[0] = 0.
-        # numUnitsShort[zscore > entryZscore]=-1.0
-        # numUnitsShort[zscore < exitZscore]=0.0
-        # numUnitsShort[(numUnitsShort!=0.0) & (numUnitsShort!=-1.0)]= np.nan
-        # numUnitsShort = numUnitsShort.fillna(method='ffill')
 
         # concatenate all positions
         numUnits = numUnitsShort + numUnitsLong
+        # apply trading filter
+        if trading_filter is not None:
+            if trading_filter['name'] == 'correlation':
+                numUnits = self.apply_correlation_filter(lookback=trading_filter['lookback'],
+                                                        lag=trading_filter['lag'],
+                                                        threshold=trading_filter['diff_threshold'],
+                                                        Y=Y,
+                                                        X=X,
+                                                        units=numUnits
+                                                       )
+
+        # define positions according to cointegration equation
         X_positions = (numUnits*(-rolling_beta*X)).fillna(0)
         Y_positions = (numUnits*Y)
         # discard positions up to window size
@@ -407,7 +405,7 @@ class Trader:
         return pnl, ret_0, summary, sharpe
 
     def apply_bollinger_strategy(self, pairs, lookback_multiplier, entry_multiplier=2, exit_multiplier=0.5,
-                                 implementation='standard'):
+                                 implementation='standard', trading_filter=None):
         """
 
         :param pairs: pairs to trade
@@ -415,6 +413,7 @@ class Trader:
         :param entry_multiplier: multiplier to define position entry level
         :param exit_multiplier: multiplier to define position exit level
         :param implementation: either "ec" or "standard"
+        :param trading_filter: trading_flter dictionary with parameters or None object in case of no filter
 
         :return: sharpe ratio results
         :return: cumulative returns
@@ -429,18 +428,27 @@ class Trader:
             print('\n\n{},{}'.format(pair[0], pair[1]))
             coint_result = pair[2]
             lookback = lookback_multiplier * (coint_result['half_life'])
+            if trading_filter is not None:
+                trading_filter['lookback'] = trading_filter['lookback_multiplier']*(coint_result['half_life'])
 
             if lookback >= len(coint_result['Y']):
                 print('Error: lookback is larger than length of the series')
 
             # run 1 of 2 possible implementations
             if implementation == 'standard':
-                pnl, ret, summary, sharpe = self.bollinger_bands(coint_result['Y'], coint_result['X'],
-                                                                   lookback, entry_multiplier, exit_multiplier)
+                pnl, ret, summary, sharpe = self.bollinger_bands(coint_result['Y'],
+                                                                 coint_result['X'],
+                                                                 lookback,
+                                                                 entry_multiplier,
+                                                                 exit_multiplier,
+                                                                 trading_filter)
                 cum_returns.append((np.cumprod(1 + ret) - 1)[-1] * 100)
             else:
-                pnl, ret, summary, sharpe = self.bollinger_bands_ec(coint_result['Y'], coint_result['X'],
-                                                                      lookback, entry_multiplier, exit_multiplier)
+                pnl, ret, summary, sharpe = self.bollinger_bands_ec(coint_result['Y'],
+                                                                    coint_result['X'],
+                                                                    lookback,
+                                                                    entry_multiplier,
+                                                                    exit_multiplier)
                 cum_returns.append((np.cumprod(1 + ret) - 1).iloc[-1] * 100)
 
             sharpe_results.append(sharpe)
@@ -526,7 +534,7 @@ class Trader:
 
         return direction_indices
 
-    def correlation_filter(self, lookback, lag, correlation_threshold):
+    def apply_correlation_filter(self, lookback, lag, threshold, Y, X, units):
         """
         This function implements a filter proposed by Dunnis 2005.
         The main idea is tracking how the correlation is varying in a moving period, so that we
@@ -536,7 +544,53 @@ class Trader:
         :param lookback: lookback period
         :param lag: lag to compare the correlaiton evolution
         :param correlation_threshold: minimium difference to consider change
+
         :return: indices for position entry
         """
 
-        return None
+        # calculate correlation variations
+        rolling_window = lookback
+        returns_X = X.pct_change()
+        returns_Y = Y.pct_change()
+        correlation = returns_X.rolling(rolling_window).corr(returns_Y)
+        diff_correlation = correlation.diff(periods=lag)
+
+        # change positions accordingly
+        diff_correlation.name = 'diff_correlation'; units.name = 'units'
+        df = pd.concat([diff_correlation, units], axis=1)
+        new_df = self.update_positions(df, 'diff_correlation', threshold)
+
+        units = new_df['units']
+
+        return units
+
+    def update_positions(self, df, attribute, threshold):
+        """
+        The following function receives a dataframe containing hte current positions
+        along with the attribute column from which condition should be verified.
+        A new df with positions updated accordingly is returned.
+
+        :param df: df containing positions and column with attribute
+        :param attribute: attribute name
+        :param threshold: threshold that condition must verify
+        :return: df with updated positions
+        """
+        previous_unit = 0
+        for index, row in df.iterrows():
+            if previous_unit == row['units']:
+                continue  # no change in positions to verify
+            else:
+                if row['units'] == 0:
+                    previous_unit = row['units']
+                    continue  # simply close trade, nothing to verify
+                else:
+                    if row[attribute] <= threshold:  # if criteria is met, continue
+                        previous_unit = row['units']
+                        continue
+                    elif row[attribute] > threshold:  # if criteria is not met, update row
+                        row['units'] = 0
+                        previous_unit = row['units']
+                        continue
+
+        return df
+

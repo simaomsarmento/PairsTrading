@@ -61,14 +61,23 @@ if __name__ == "__main__":
     # 4. Apply trading strategy
     trader = class_Trader.Trader()
 
+    # obtain trading strategy
     trading_strategy = config['trading']['strategy']
+
+    # obtain trading filter info
+    if config['trading_filter']['active'] == 1:
+        trading_filter = config['trading_filter']
+    else:
+        trading_filter = None
+
     if 'bollinger' in trading_strategy:
         sharpe_results_bollinger, cum_returns_bollinger, failed_pairs = trader.apply_bollinger_strategy(
                                                                                                 pairs=pairs,
                                                                                                 lookback_multiplier=config['trading']['lookback_multiplier'],
                                                                                                 entry_multiplier=config['trading']['entry_multiplier'],
                                                                                                 exit_multiplier=config['trading']['exit_multiplier'],
-                                                                                                implementation=config['trading']['implementation']
+                                                                                                implementation=config['trading']['implementation'],
+                                                                                                trading_filter=trading_filter
                                                                                                 )
     if 'kalman' in trading_strategy:
         sharpe_results_kalman, cum_returns_kalman = trader.apply_kalman_strategy(pairs,
