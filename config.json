@@ -23,7 +23,6 @@
     },
     "trading": {
         "strategy": "bollinger",
-        "implementation": "standard",
         "lookback_multiplier": 2,
         "entry_multiplier": 1,
         "exit_multiplier": 0

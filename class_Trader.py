@@ -194,13 +194,13 @@ class Trader:
 
 
         # checking results
-        pnl.name = 'pnl' ;  pnl_X.name = 'pnl_X'; pnl_Y.name = 'pnl_Y'
+        pnl.name = 'pnl'  # ;pnl_X.name = 'pnl_X'; pnl_Y.name = 'pnl_Y'
         rolling_spread = Y-rolling_beta*X
         rolling_spread.name = 'spread'
         ret_0.name = 'ret'
         zscore.name = 'zscore'
-        numUnits.name = 'units'
-        summary = pd.concat([pnl_X, pnl_Y, pnl, ret_0, X, Y, rolling_spread, zscore, numUnits], axis=1)
+        numUnits.name = 'numUnits'
+        summary = pd.concat([pnl, ret_0, X, Y, rolling_spread, zscore, numUnits], axis=1)
         #new_df = new_df.loc[datetime(2006,7,26):]
         summary = summary[36:]
 
@@ -225,8 +225,8 @@ class Trader:
         yport = yport * df[cols]
 
         yport = yport[X.name] + yport[Y.name]
-        data_mean = pd.rolling_mean(yport, window=20)
-        data_std = pd.rolling_std(yport, window=20)
+        data_mean = pd.rolling_mean(yport, window=lookback)
+        data_std = pd.rolling_std(yport, window=lookback)
         zScore = (yport - data_mean) / data_std
 
         entryZscore = entry_multiplier
@@ -274,7 +274,8 @@ class Trader:
         rolling_spread = yport
         rolling_spread.name = 'spread'
         zScore.name = 'zscore'
-        summary = pd.concat([pnl, X, Y, rolling_spread, zScore], axis=1)
+        ret.name = 'ret'
+        summary = pd.concat([pnl, ret, X, Y, rolling_spread, zScore, df['numUnits']], axis=1)
         summary.index = summary['Date']
         # new_df = new_df.loc[datetime(2006,7,26):]
         summary = summary[36:]
@@ -405,14 +406,13 @@ class Trader:
         return pnl, ret_0, summary, sharpe
 
     def apply_bollinger_strategy(self, pairs, lookback_multiplier, entry_multiplier=2, exit_multiplier=0.5,
-                                 implementation='standard', trading_filter=None):
+                                 trading_filter=None):
         """
 
         :param pairs: pairs to trade
         :param lookback_multiplier: half life multiplier to define lookback period
         :param entry_multiplier: multiplier to define position entry level
         :param exit_multiplier: multiplier to define position exit level
-        :param implementation: either "ec" or "standard"
         :param trading_filter: trading_flter dictionary with parameters or None object in case of no filter
 
         :return: sharpe ratio results
@@ -422,7 +422,7 @@ class Trader:
 
         sharpe_results = []
         cum_returns = []
-        negative_performance = []  # aux variable to store non profitable pairs
+        performance = []  # aux variable to store pairs' record
 
         for pair in pairs:
             print('\n\n{},{}'.format(pair[0], pair[1]))
@@ -434,28 +434,17 @@ class Trader:
             if lookback >= len(coint_result['Y']):
                 print('Error: lookback is larger than length of the series')
 
-            # run 1 of 2 possible implementations
-            if implementation == 'standard':
-                pnl, ret, summary, sharpe = self.bollinger_bands(coint_result['Y'],
+            pnl, ret, summary, sharpe = self.bollinger_bands(coint_result['Y'],
                                                                  coint_result['X'],
                                                                  lookback,
                                                                  entry_multiplier,
                                                                  exit_multiplier,
                                                                  trading_filter)
-                cum_returns.append((np.cumprod(1 + ret) - 1)[-1] * 100)
-            else:
-                pnl, ret, summary, sharpe = self.bollinger_bands_ec(coint_result['Y'],
-                                                                    coint_result['X'],
-                                                                    lookback,
-                                                                    entry_multiplier,
-                                                                    exit_multiplier)
-                cum_returns.append((np.cumprod(1 + ret) - 1).iloc[-1] * 100)
-
+            cum_returns.append((np.cumprod(1 + ret) - 1)[-1] * 100)
             sharpe_results.append(sharpe)
-            if sharpe < 0:
-                negative_performance.append((pair, summary))
+            performance.append((pair, summary))
 
-        return sharpe_results, cum_returns, negative_performance
+        return sharpe_results, cum_returns, performance
 
     def apply_kalman_strategy(self, pairs, entry_multiplier=2, exit_multiplier=0.5):
         """
@@ -543,8 +532,10 @@ class Trader:
 
         :param lookback: lookback period
         :param lag: lag to compare the correlaiton evolution
-        :param correlation_threshold: minimium difference to consider change
-
+        :param threshold: minimium difference to consider change
+        :param Y: Y series
+        :param X: X series
+        :param units: positions taken
         :return: indices for position entry
         """
 

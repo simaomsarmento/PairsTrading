@@ -71,12 +71,11 @@ if __name__ == "__main__":
         trading_filter = None
 
     if 'bollinger' in trading_strategy:
-        sharpe_results_bollinger, cum_returns_bollinger, failed_pairs = trader.apply_bollinger_strategy(
+        sharpe_results_bollinger, cum_returns_bollinger, performance = trader.apply_bollinger_strategy(
                                                                                                 pairs=pairs,
                                                                                                 lookback_multiplier=config['trading']['lookback_multiplier'],
                                                                                                 entry_multiplier=config['trading']['entry_multiplier'],
                                                                                                 exit_multiplier=config['trading']['exit_multiplier'],
-                                                                                                implementation=config['trading']['implementation'],
                                                                                                 trading_filter=trading_filter
                                                                                                 )
     if 'kalman' in trading_strategy:
