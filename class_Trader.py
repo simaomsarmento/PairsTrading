@@ -157,12 +157,18 @@ class Trader:
         if trading_filter is not None:
             if trading_filter['name'] == 'correlation':
                 numUnits = self.apply_correlation_filter(lookback=trading_filter['lookback'],
-                                                        lag=trading_filter['lag'],
-                                                        threshold=trading_filter['diff_threshold'],
-                                                        Y=Y,
-                                                        X=X,
-                                                        units=numUnits
+                                                         lag=trading_filter['lag'],
+                                                         threshold=trading_filter['diff_threshold'],
+                                                         Y=Y,
+                                                         X=X,
+                                                         units=numUnits
                                                        )
+            elif trading_filter['name'] == 'zscore_diff':
+                numUnits = self.apply_zscorediff_filter(lag=trading_filter['lag'],
+                                                        threshold=trading_filter['diff_threshold'],
+                                                        zscore=zscore,
+                                                        units=numUnits
+                                                        )
 
         # define positions according to cointegration equation
         X_positions = (numUnits*(-rolling_beta*X)).fillna(0)
@@ -181,8 +187,7 @@ class Trader:
         ret = (pnl/(np.abs(X_positions.shift(periods=1))+np.abs(Y_positions.shift(periods=1))))
         # use without fillna(0) according to git version, so that when position is not entered it is not taken into
         # account when calculating the avg return
-        ret_0 = ret.fillna(0)
-        ret = ret_0
+        ret= ret.fillna(0)
 
         APR = ((np.prod(1.+ret))**(252./len(ret)))-1
         if np.std(ret) == 0:
@@ -192,19 +197,13 @@ class Trader:
         print('APR', APR)
         print('Sharpe', sharpe)
 
+        # get trade summary
+        rolling_spread = Y - rolling_beta * X
+        series_to_include = [(pnl, 'pnl'), (ret, 'ret'), (rolling_spread, 'spread'), (Y, Y.name), (X, X.name),
+                             (zscore, 'zscore'), (numUnits, 'numUnits')]
+        summary = self.trade_summary(series_to_include)
 
-        # checking results
-        pnl.name = 'pnl'  # ;pnl_X.name = 'pnl_X'; pnl_Y.name = 'pnl_Y'
-        rolling_spread = Y-rolling_beta*X
-        rolling_spread.name = 'spread'
-        ret_0.name = 'ret'
-        zscore.name = 'zscore'
-        numUnits.name = 'numUnits'
-        summary = pd.concat([pnl, ret_0, X, Y, rolling_spread, zscore, numUnits], axis=1)
-        #new_df = new_df.loc[datetime(2006,7,26):]
-        summary = summary[36:]
-
-        return pnl, ret_0, summary, sharpe
+        return pnl, ret, summary, sharpe
 
 
     def bollinger_bands_ec(self, Y, X, lookback, entry_multiplier=1, exit_multiplier=0):
@@ -275,7 +274,9 @@ class Trader:
         rolling_spread.name = 'spread'
         zScore.name = 'zscore'
         ret.name = 'ret'
-        summary = pd.concat([pnl, ret, X, Y, rolling_spread, zScore, df['numUnits']], axis=1)
+        numUnits = df['numUnits']; numUnits.name = 'current_position'
+        numUnits = numUnits.shift()
+        summary = pd.concat([pnl, ret, X, Y, rolling_spread, zScore, numUnits], axis=1)
         summary.index = summary['Date']
         # new_df = new_df.loc[datetime(2006,7,26):]
         summary = summary[36:]
@@ -384,8 +385,7 @@ class Trader:
         tmp3 = np.array(y2.shift(1))
         pnl = np.sum(tmp1 * tmp2 / tmp3,axis=1)
         ret = pnl / np.sum(np.abs(positions.shift(1)),axis=1)
-        ret_0 = ret.fillna(0)
-        ret = ret_0
+        ret = ret.fillna(0)
         #ret = ret.dropna()
 
 
@@ -395,15 +395,14 @@ class Trader:
         print('Sharpe', sharpe)
 
         # get summary df
-        threshold_Q = pd.Series(np.sqrt(Q)); threshold_Q.name = 'sqrt(Q)'
-        pnl = pd.Series(pnl); pnl.name = 'PNL'
-        e = pd.Series(e); e.name = 'e'
-        ret.name = 'ret'; numUnits.name = 'numUnits'
-        x_series = x_series.reset_index(drop=True); y_series = y_series.reset_index(drop=True); ret = ret.reset_index()
-        summary = pd.concat([pnl, ret, x_series, y_series, e, threshold_Q, numUnits], axis=1)
-        summary = summary[30:]
+        series_to_include = [(pd.Series(pnl), 'pnl'), (ret.reset_index(drop=True), 'ret'),
+                             (y_series.reset_index(drop=True), y_series.name),
+                             (x_series.reset_index(), x_series.name),
+                             (pd.Series(e), 'e'), (pd.Series(np.sqrt(Q)), 'sqrt(Q)'),
+                             (numUnits, 'numUnits')]
+        summary = self.trade_summary(series_to_include)
 
-        return pnl, ret_0, summary, sharpe
+        return pnl, ret, summary, sharpe
 
     def apply_bollinger_strategy(self, pairs, lookback_multiplier, entry_multiplier=2, exit_multiplier=0.5,
                                  trading_filter=None):
@@ -458,6 +457,7 @@ class Trader:
         """
         sharpe_results = []
         cum_returns = []
+        performance = []  # aux variable to store pairs' record
         for pair in pairs:
             print('\n\n{},{}'.format(pair[0], pair[1]))
             coint_result = pair[2]
@@ -466,10 +466,40 @@ class Trader:
                                                            entry_multiplier=entry_multiplier,
                                                            exit_multiplier=exit_multiplier
                                                            )
-            cum_returns.append((np.cumprod(1 + ret) - 1)[-1] * 100)
+            cum_returns.append((np.cumprod(1 + ret) - 1).iloc[-1] * 100)
             sharpe_results.append(sharpe)
+            performance.append((pair, summary))
 
-        return sharpe_results, cum_returns
+        return sharpe_results, cum_returns, performance
+
+    def trade_summary(self, series):
+        """
+        This function receives a set of series containing information from the trade and
+        returns a DataFrame containing the summary data.
+
+        :param series: a list of tuples containing the time series and the corresponding names
+        :return: summary dataframe with all series concatenated
+        """
+        for attribute, attribute_name in series:
+            try:
+                attribute.name = attribute_name
+            except:
+                continue
+
+        summary = pd.concat([item[0] for item in series], axis=1)
+
+        # add position returns
+        summary = self.add_position_returns(summary)
+
+        # change numUnits so that it corresponds to the position for the row's date,
+        # instead of corresponding to the next position
+        summary['numUnits'] = summary['numUnits'].shift().fillna(0)
+        summary = summary.rename(columns={"numUnits": "current_position"})
+        if 'Date' in summary.columns:
+            summary = summary.set_index('Date')
+        #summary = summary[36:]
+
+        return summary
 
     def cross_threshold(self, array, threshold, direction='up', position='exit'):
         """
@@ -544,12 +574,38 @@ class Trader:
         returns_X = X.pct_change()
         returns_Y = Y.pct_change()
         correlation = returns_X.rolling(rolling_window).corr(returns_Y)
-        diff_correlation = correlation.diff(periods=lag)
+        diff_correlation = correlation.diff(periods=lag).fillna(0)
 
         # change positions accordingly
         diff_correlation.name = 'diff_correlation'; units.name = 'units'
         df = pd.concat([diff_correlation, units], axis=1)
         new_df = self.update_positions(df, 'diff_correlation', threshold)
+
+        units = new_df['units']
+
+        return units
+
+    def apply_zscorediff_filter(self, lag, threshold, zscore, units):
+        """
+        This function implements a filter which tracks how the zscore has been growing.
+        The premise is that positions should not be entered while zscore is rising.
+
+        :param lookback: lookback period
+        :param lag: lag to compare the zscore evolution
+        :param threshold: minimium difference to consider change
+        :param Y: Y series
+        :param X: X series
+        :param units: positions taken
+        :return: indices for position entry
+        """
+
+        # calculate zscore differences
+        zscore_diff = zscore.diff(periods=lag).fillna(0)
+
+        # change positions accordingly
+        zscore_diff.name = 'zscore_diff'; units.name = 'units'
+        df = pd.concat([zscore_diff, units], axis=1)
+        new_df = self.update_positions(df, 'zscore_diff', threshold)
 
         units = new_df['units']
 
@@ -585,3 +641,33 @@ class Trader:
 
         return df
 
+    def add_position_returns(self, df):
+        """
+        The following function adds a column containing the info concerning the last position
+        returns
+
+        :param df: Dataframe containing the trading summary
+        :return: df with extra column providing return information for each position
+        """
+
+        df['position_return'] = 0
+        previous_unit = 0.
+        position_ret_acc = 1.
+        for index, row in df.iterrows():
+            if previous_unit == row['numUnits']:
+                if previous_unit != 0.:
+                    position_ret_acc = position_ret_acc * (1+row['ret'])
+                continue  # no change in positions to verify
+            else:
+                if previous_unit == 0.:
+                    previous_unit = row['numUnits']
+                    continue  # simply start the trade
+                else:
+                    # update position returns
+                    position_ret_acc = position_ret_acc * (1+row['ret'])
+                    df.loc[index, 'position_return'] = (position_ret_acc-1)*100
+                    position_ret_acc = 1.
+                    previous_unit = row['numUnits']
+                    continue
+
+        return df

@@ -1,0 +1,23 @@
+This file serves as support for the usage of the config.json file.
+
+The config.json contains a set of specifications that are automatically read by the program. All the parameters which
+are allowed to be configured are therefore displayed in this file. No code changes are required.
+
+Description:
+- dataset: Contains parameters related to the data sample.
+    - path:
+    - ticker_attribute:
+    - initial_date:
+    - final_date:
+    - data_source:
+    - nan_threshold:
+
+- PCA:
+
+- clustering
+
+- pair_restrictions
+
+- trading
+
+- trading_filter: Contains the specifications of the trading filter to use

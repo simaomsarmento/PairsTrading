@@ -68,12 +68,14 @@ class SeriesAnalyser:
             stats = self.check_for_stationarity(pd.Series(spread, name='Spread'))
             zero_cross = self.zero_crossings(spread)
             hl = self.calculate_half_life(spread)
+            hurst_exponent = self.hurst(spread)
             coint_stats[i] = {'t_statistic': stats['t_statistic'],
                               'critical_val': stats['critical_values'],
                               'p_value': stats['p_value'],
                               'coint_coef': b,
                               'zero_cross': zero_cross,
                               'half_life': int(round(hl)),
+                              'hurst_exponent': hurst_exponent,
                               'spread': spread,
                               'Y': S2,
                               'X': S1
@@ -113,7 +115,7 @@ class SeriesAnalyser:
                     hl = self.calculate_half_life(result['spread'])
                     if hl >= min_half_life: # verifies required half life
                         if result['zero_cross'] >= min_zero_crossings: # verifies required zero crossings
-                            if self.hurst(result['spread'])<hurst_threshold: # verifies hurst exponent
+                            if result['hurst_exponent'] < hurst_threshold: # verifies hurst exponent
                                 pairs.append((keys[i], keys[j], result))
 
         return pairs
