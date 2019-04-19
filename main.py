@@ -40,13 +40,18 @@ if __name__ == "__main__":
 
     # 2. Apply PCA and clustering
     series_analyser = class_SeriesAnalyser.SeriesAnalyser()
-    # PCA
-    X, explained_variance = series_analyser.apply_PCA(config['PCA']['N_COMPONENTS'], df_returns)
-    # Clustering
-    clustered_series_all, clustered_series, counts, clf = series_analyser.apply_DBSCAN(config['clustering']['epsilon'],
-                                                                                       config['clustering']['min_samples'],
-                                                                                       X,
-                                                                                       df_returns)
+    try:
+        range_n_components = config['PCA']['N_COMPONENTS'] # vaidates tuple input
+        X, clustered_series_all, clustered_series, counts, clf = \
+            series_analyser.clustering_for_optimal_PCA(range_n_components[0], range_n_components[1],
+                                                       df_returns, config['clustering'])
+    except:
+        # PCA
+        X, explained_variance = series_analyser.apply_PCA(config['PCA']['N_COMPONENTS'], df_returns)
+        # Clustering
+        clustered_series_all, clustered_series, counts, clf = \
+            series_analyser.apply_DBSCAN(config['clustering']['epsilon'], config['clustering']['min_samples'],
+                                         X, df_returns)
 
     # 3. Find good candidate pairs
     pairs, unique_tickers = series_analyser.get_candidate_pairs(clustered_series=clustered_series,

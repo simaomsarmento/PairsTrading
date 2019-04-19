@@ -7,8 +7,7 @@ from statsmodels.tsa.stattools import coint, adfuller
 from sklearn.cluster import DBSCAN
 from sklearn.decomposition import PCA
 from sklearn import preprocessing
-
-import matplotlib.pyplot as plt
+from sklearn.metrics import silhouette_score
 
 # just set the seed for the random number generator
 np.random.seed(107)
@@ -196,27 +195,29 @@ class SeriesAnalyser:
 
         return zero_crossings
 
-    def apply_PCA(self, n_components, df):
+    def apply_PCA(self, n_components, df, svd_solver='auto'):
         """
         This function applies Principal Component Analysis to the df given as
         parameter
 
         :param n_components: number of principal components
         :param df: dataframe containing time series for analysis
+        :param svd_solver: solver for PCA: see PCA documentation
         :return: reduced normalized and transposed df
         """
 
-        if n_components > df.shape[1]:
-            print("ERROR: number of components larger than samples...")
-            exit()
+        if not isinstance(n_components, str):
+            if n_components > df.shape[1]:
+                print("ERROR: number of components larger than samples...")
+                exit()
 
-        pca = PCA(n_components=n_components)
+        pca = PCA(n_components=n_components, svd_solver=svd_solver)
         pca.fit(df)
         explained_variance = pca.explained_variance_
 
         # standardize
         X = preprocessing.StandardScaler().fit_transform(pca.components_.T)
-        print('New shape: ', X.shape)
+        #print('New shape: ', X.shape)
 
         return X, explained_variance
 
@@ -233,13 +234,13 @@ class SeriesAnalyser:
         :return: counts: counts of each cluster
         :return: clf object
         """
-        clf = DBSCAN(eps=eps, min_samples=min_samples)
-        print(clf)
+        clf = DBSCAN(eps=eps, min_samples=min_samples, metric='euclidean')
+        #print(clf)
 
         clf.fit(X)
         labels = clf.labels_
         n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
-        print("\nClusters discovered: %d" % n_clusters_)
+        print("Clusters discovered: %d" % n_clusters_)
 
         clustered_series_all = pd.Series(index=df_returns.columns, data=labels.flatten())
         clustered_series = clustered_series_all[clustered_series_all != -1]
@@ -248,6 +249,67 @@ class SeriesAnalyser:
         print("Pairs to evaluate: %d" % (counts * (counts - 1) / 2).sum())
 
         return clustered_series_all, clustered_series, counts, clf
+
+    def clustering_for_optimal_PCA(self, min_components, max_components, returns, clustering_params):
+        """
+        This function experiments different values for the number of PCA components considered.
+        It returns the values obtained for the number of components which provided the best silhouette
+        coefficient.
+
+        :param min_components: min number of components to test
+        :param max_components: max number of components to test
+        :param returns: series of returns
+        :param clustering_params: parameters for clustering
+
+        :return: X: PCA reduced dataset
+        :return: clustered_series_all: cluster labels for all sample
+        :return: clustered_series: cluster labels for samples belonging to a cluster
+        :return: counts: counts for each cluster
+        :return: clf: object returned by DBSCAN
+        """
+        # initialize dictionary to save best performers
+        best_n_comp = {'n_comp': -1,
+                       'silhouette': -1,
+                       'X': None,
+                       'clustered_series_all': None,
+                       'clustered_series': None,
+                       'counts': None,
+                       'clf': None
+                       }
+
+        for n_comp in range(min_components, max_components):
+            print('\nNumber of components: ', n_comp)
+            # Apply PCA on data
+            X, _ = self.apply_PCA(n_comp, returns)
+            # Apply DBSCAN
+            clustered_series_all, clustered_series, counts, clf = self.apply_DBSCAN(
+                clustering_params['epsilon'],
+                clustering_params['min_samples'],
+                X,
+                returns)
+            # Silhouette score
+            silhouette = silhouette_score(X, clf.labels_, 'euclidean')
+            print('Silhouette score ', silhouette)
+
+            # Standard deviation
+            # std_deviation = counts.std()
+            # print('Standard deviation: ',std_deviation))
+
+            if silhouette > best_n_comp['silhouette']:
+                best_n_comp = {'n_comp': n_comp,
+                               'silhouette': silhouette,
+                               'X': X,
+                               'clustered_series_all': clustered_series_all,
+                               'clustered_series': clustered_series,
+                               'counts': counts,
+                               'clf': clf
+                               }
+
+        print('\nThe best silhouette coefficient was: {} for {} principal components'.format(best_n_comp['silhouette'],
+                                                                                             best_n_comp['n_comp']))
+
+        return best_n_comp['X'], best_n_comp['clustered_series_all'], best_n_comp['clustered_series'], best_n_comp[
+            'counts'], best_n_comp['clf']
 
     def get_candidate_pairs(self, clustered_series, pricing_df, n_clusters, min_half_life=5,
                             min_zero_crosings=20, p_value_threshold=0.05, hurst_threshold=0.5):
