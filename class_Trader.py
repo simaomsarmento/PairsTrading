@@ -671,3 +671,56 @@ class Trader:
                     continue
 
         return df
+
+    def summarize_results(self, sharpe_results, cum_returns, performance, total_pairs):
+        """
+        This function summarizes interesting metrics to include in the final output
+
+        :param sharpe_results: array containing sharpe results for each pair
+        :param cum_returns: array containing cum returns for each pair
+        :param performance: df containing a summary of each pair's trade
+
+        :return: dictionary with metrics of interest
+        """
+
+        n_pairs = len(sharpe_results)
+        avg_sharpe_ratio = np.mean(sharpe_results)
+        avg_ROI = np.mean(cum_returns)
+
+        sorted_indices = np.flip(np.argsort(sharpe_results), axis=0)
+        # initialize list of lists
+        data = []
+        for index in sorted_indices:
+            # get number of positive and negative positions
+            position_returns = performance[index][1].position_return
+            positive_positions = len(position_returns[position_returns > 0])
+            negative_positions = len(position_returns[position_returns < 0])
+            data.append([total_pairs[index][2]['p_value'],
+                         total_pairs[index][2]['zero_cross'],
+                         total_pairs[index][2]['half_life'],
+                         total_pairs[index][2]['hurst_exponent'],
+                         positive_positions,
+                         negative_positions,
+                         sharpe_results[index]
+                         ])
+
+        # Create the pandas DataFrame
+        aux_df = pd.DataFrame(data, columns=['p_value', 'zero_cross', 'half_life', 'hurst_exponent', 'positive_trades',
+                                             'negative_trades', 'sharpe_result'])
+
+        aux_df['pos_neg_ratio'] = aux_df['positive_trades']/aux_df['negative_trades']
+        pos_neg_ratio = aux_df['pos_neg_ratio'].mean()
+
+        sharpe_results = np.asarray(sharpe_results)
+        negative_pairs_indices = np.argwhere(sharpe_results < 0)
+        negative_percentage = len(negative_pairs_indices)/len(sharpe_results)*100
+
+        results = {'n_pairs': n_pairs,
+                   'avg_sharpe_ratio': avg_sharpe_ratio,
+                   'avg_ROI': avg_ROI,
+                   'positive_negative_ratio': pos_neg_ratio,
+                   'negative_pairs_percentage': negative_percentage,
+                   'avg_half_life': aux_df['half_life'].mean(),
+                   'avg_hurst_exponent': aux_df['hurst_exponent'].mean()}
+
+        return results

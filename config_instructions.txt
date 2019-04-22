@@ -13,8 +13,9 @@ Description:
     - nan_threshold:
 
 - PCA:
-    - n_components: number of components to use in PCA. If tuple is provided, the optimal is chosen withing the range
-                    (the optimum is considered as the one which maximizes the silhouette coefficient post clustering)
+    - n_components: number of components to use in PCA. If list [min, max] is provided, the optimal is chosen withing
+                    the range (the optimum is considered as the one which maximizes the silhouette coefficient post
+                    clustering)
 
 - clustering
 

@@ -41,7 +41,8 @@ if __name__ == "__main__":
     # 2. Apply PCA and clustering
     series_analyser = class_SeriesAnalyser.SeriesAnalyser()
     try:
-        range_n_components = config['PCA']['N_COMPONENTS'] # vaidates tuple input
+        # validates list input
+        range_n_components = config['PCA']['N_COMPONENTS']
         X, clustered_series_all, clustered_series, counts, clf = \
             series_analyser.clustering_for_optimal_PCA(range_n_components[0], range_n_components[1],
                                                        df_returns, config['clustering'])
@@ -76,19 +77,29 @@ if __name__ == "__main__":
         trading_filter = None
 
     if 'bollinger' in trading_strategy:
-        sharpe_results_bollinger, cum_returns_bollinger, performance = trader.apply_bollinger_strategy(
-                                                                                                pairs=pairs,
-                                                                                                lookback_multiplier=config['trading']['lookback_multiplier'],
-                                                                                                entry_multiplier=config['trading']['entry_multiplier'],
-                                                                                                exit_multiplier=config['trading']['exit_multiplier'],
-                                                                                                trading_filter=trading_filter
-                                                                                                )
-    if 'kalman' in trading_strategy:
-        sharpe_results_kalman, cum_returns_kalman = trader.apply_kalman_strategy(pairs,
-                                                                                 entry_multiplier=config['trading']['entry_multiplier'],
-                                                                                 exit_multiplier=config['trading']['exit_multiplier']
-                                                                                 )
+        sharpe_results, cum_returns, performance = trader.apply_bollinger_strategy(pairs=pairs,
+                                                                                   lookback_multiplier=config['trading']['lookback_multiplier'],
+                                                                                   entry_multiplier=config['trading']['entry_multiplier'],
+                                                                                   exit_multiplier=config['trading']['exit_multiplier'],
+                                                                                   trading_filter=trading_filter
+                                                                                   )
+        print('Avg sharpe Ratio using Bollinger: ', np.mean(sharpe_results))
 
+    elif 'kalman' in trading_strategy:
+        sharpe_results, cum_returns, performance = trader.apply_kalman_strategy(pairs,
+                                                                                entry_multiplier=config['trading']['entry_multiplier'],
+                                                                                exit_multiplier=config['trading']['exit_multiplier']
+                                                                                )
+        print('Avg sharpe Ratio using kalman: ', np.mean(sharpe_results))
+    else:
+        print('Please insert valid trading strategy: 1. "bollinger" or 2."kalman"')
+        exit()
 
+    # get results
+    results = trader.summarize_results(sharpe_results, cum_returns, performance, pairs)
 
-
+    # 5. Dump results in excel file
+    data_processor.dump_results(dataset=config['dataset'], pca=config['PCA'], clustering=config['clustering'],
+                                pair_restrictions=config['pair_restrictions'], trading=config['trading'],
+                                trading_filter=config['trading_filter'], results=results,
+                                filename=config['output']['filename'])
