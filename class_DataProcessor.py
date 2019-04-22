@@ -197,8 +197,6 @@ class DataProcessor:
         :param trading_filter: dictionary containg information regarding the trading filter used
         :param results: dictionary containg information regarding the results obtained
         :param filename: filename of where to write the summary info
-
-        :return:
         """
 
         # intialise data of lists.
@@ -244,6 +242,7 @@ class DataProcessor:
         # Create DataFrame
         df = pd.DataFrame(summary, index=[datetime.now()])
         df.index.name = 'Date'
+        # set order of columns
         cols = ["path", "training_initial_date", "training_final_date", "testing_initial_date", "testing_final_date",
                 "n_components_PCA", "clustering_algo", "epsilon", "min_samples",
                 "min_half_life", "min_zero_crossings", "p_value_threshold", "hurst_threshold", "strategy",

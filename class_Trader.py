@@ -679,6 +679,7 @@ class Trader:
         :param sharpe_results: array containing sharpe results for each pair
         :param cum_returns: array containing cum returns for each pair
         :param performance: df containing a summary of each pair's trade
+        :param total_pairs: list containing all the identified pairs
 
         :return: dictionary with metrics of interest
         """
