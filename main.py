@@ -6,7 +6,7 @@ This script does the following:
     4- Implements a pairs trading strategy (import class_Trader)
 """
 
-
+import pandas as pd
 import numpy as np
 import json
 import sys
@@ -26,16 +26,24 @@ if __name__ == "__main__":
     # initialize data processor
     data_processor = class_DataProcessor.DataProcessor(path=config['dataset']['path'])
 
-    # read tickers
-    _, df_tickers, tickers = data_processor.read_ticker_excel(ticker_attribute=config['dataset']['ticker_attribute'])
-
-    # get price series for tickers
-    ticker_prices = data_processor.read_tickers_prices(tickers=tickers,
+    # get price series for tickers. First sees if df is already stored in pkl file
+    dataset_name = config['dataset']['path'].replace("data/etfs/", "").replace(".xlsx", "")
+    try:
+        # try to retrieve from pickle if repeated file
+        df_prices = pd.read_pickle('data/etfs/pickle/'+dataset_name)
+    except:
+        # read from original data source and save in pickle file
+        _, df_tickers, tickers = data_processor.read_ticker_excel(
+            ticker_attribute=config['dataset']['ticker_attribute'])
+        # obtain prices
+        ticker_prices = data_processor.read_tickers_prices(tickers=tickers,
                                                        initial_date=config['dataset']['initial_date'],
                                                        final_date=config['dataset']['final_date'],
                                                        data_source=config['dataset']['data_source']
                                                        )
-    _, df_prices = data_processor.dict_to_df(ticker_prices, config['dataset']['nan_threshold'])
+        _, df_prices = data_processor.dict_to_df(ticker_prices, config['dataset']['nan_threshold'])
+        # save in pickle file
+        df_prices.to_pickle('data/etfs/pickle/'+dataset_name)
 
     # get return series
     df_returns = data_processor.get_return_series(df_prices)
