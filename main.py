@@ -28,6 +28,7 @@ if __name__ == "__main__":
 
     # get price series for tickers. First sees if df is already stored in pkl file
     dataset_name = config['dataset']['path'].replace("data/etfs/", "").replace(".xlsx", "")
+    dataset_name = dataset_name + '_' + config['dataset']['initial_date'] + '_' + config['dataset']['final_date']
     try:
         # try to retrieve from pickle if repeated file
         df_prices = pd.read_pickle('data/etfs/pickle/'+dataset_name)
@@ -48,7 +49,7 @@ if __name__ == "__main__":
     # get return series
     df_returns = data_processor.get_return_series(df_prices)
 
-    # 2. Apply PCA and clustering
+    # 2. APPLY PCA and CLUSTERING
     series_analyser = class_SeriesAnalyser.SeriesAnalyser()
     try:
         # validates list input
@@ -64,7 +65,7 @@ if __name__ == "__main__":
             series_analyser.apply_DBSCAN(config['clustering']['epsilon'], config['clustering']['min_samples'],
                                          X, df_returns)
 
-    # 3. Find good candidate pairs
+    # 3. FIND GOOD CANDIDATE PAIRS
     pairs, unique_tickers = series_analyser.get_candidate_pairs(clustered_series=clustered_series,
                                                                 pricing_df=df_prices,
                                                                 n_clusters=len(counts),
@@ -74,7 +75,7 @@ if __name__ == "__main__":
                                                                 hurst_threshold=config['pair_restrictions']['hurst_threshold']
                                                                 )
 
-    # 4. Apply trading strategy
+    # 4. APPLY TRADING STRATEGY
     trader = class_Trader.Trader()
 
     # obtain trading strategy
@@ -109,7 +110,9 @@ if __name__ == "__main__":
     # get results
     results, pairs_summary = trader.summarize_results(sharpe_results, cum_returns, performance, pairs)
 
-    # 5. Dump results in excel file
+    # 5. DUMP RESULTS
+    # - writes global pairs results in an excel file
+    # - stores dataframe with info regarding every pair in pickle file
     data_processor.dump_results(dataset=config['dataset'], pca=config['PCA'], clustering=config['clustering'],
                                 pair_restrictions=config['pair_restrictions'], trading=config['trading'],
                                 trading_filter=config['trading_filter'], results=results,
