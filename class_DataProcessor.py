@@ -234,8 +234,8 @@ class DataProcessor:
                    "n_pairs": [results["n_pairs"]],
                    'avg_sharpe_ratio': [results["avg_sharpe_ratio"]],
                    'avg_ROI': [results["avg_ROI"]],
-                   'positive_negative_ratio': [results["positive_negative_ratio"]],
-                   'negative_pairs': [results["negative_pairs_percentage"]],
+                   'pct_negative_trades_per_pair': [results["pct_negative_trades_per_pair"]],
+                   'pct_pairs_with_negative_results': [results["pct_pairs_with_negative_results"]],
                    'avg_half_life': [results["avg_half_life"]],
                    'avg_hurst_exponent': [results["avg_hurst_exponent"]]
                    }
@@ -251,7 +251,8 @@ class DataProcessor:
                 "min_half_life", "min_zero_crossings", "p_value_threshold", "hurst_threshold", "strategy",
                 "lookback_multiplier", "entry_multiplier", "exit_multiplier", "active", "filter_name",
                 "filter_lookback_multiplier", "filter_lag", "filter_diff_threshold", "n_pairs", 'avg_sharpe_ratio',
-                'avg_ROI', 'positive_negative_ratio', 'negative_pairs', 'avg_half_life', 'avg_hurst_exponent']
+                'avg_ROI', 'pct_negative_trades_per_pair', 'pct_pairs_with_negative_results', 'avg_half_life',
+                'avg_hurst_exponent']
         df = df[cols]
 
         self.append_df_to_excel(filename=filename, df=df)

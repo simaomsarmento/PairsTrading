@@ -733,8 +733,9 @@ class Trader:
         pairs_df = pd.DataFrame(data, columns=['Leg1', 'Leg2', 't_statistic', 'p_value', 'zero_cross', 'half_life',
                                                'hurst_exponent', 'positive_trades', 'negative_trades', 'sharpe_result'])
 
-        pairs_df['pos_neg_ratio'] = pairs_df['positive_trades']/pairs_df['negative_trades']
-        pos_neg_ratio = pairs_df['pos_neg_ratio'].mean()
+        pairs_df['negative_trades_per_pair_pct'] = (pairs_df['negative_trades']) /\
+                                                   (pairs_df['positive_trades']+pairs_df['negative_trades'])*100
+        avg_negative_trades_per_pair_pct = pairs_df['negative_trades_per_pair_pct'].mean()
 
         sharpe_results = np.asarray(sharpe_results)
         negative_pairs_indices = np.argwhere(sharpe_results < 0)
@@ -743,8 +744,8 @@ class Trader:
         results = {'n_pairs': n_pairs,
                    'avg_sharpe_ratio': avg_sharpe_ratio,
                    'avg_ROI': avg_ROI,
-                   'positive_negative_ratio': pos_neg_ratio,
-                   'negative_pairs_percentage': negative_percentage,
+                   'pct_negative_trades_per_pair': avg_negative_trades_per_pair_pct,
+                   'pct_pairs_with_negative_results': negative_percentage,
                    'avg_half_life': pairs_df['half_life'].mean(),
                    'avg_hurst_exponent': pairs_df['hurst_exponent'].mean()}
 
