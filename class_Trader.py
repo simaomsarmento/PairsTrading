@@ -189,12 +189,14 @@ class Trader:
         # account when calculating the avg return
         ret= ret.fillna(0)
 
-        APR = ((np.prod(1.+ret))**(252./len(ret)))-1
+        n_years = round(len(Y) / 240) # approx of # of years, as each year does not have exactly 252 days
+        time_in_market = 252. * n_years
+        apr = ((np.prod(1.+ret))**(time_in_market/len(ret)))-1
         if np.std(ret) == 0:
             sharpe = 0
         else:
-            sharpe = np.sqrt(252.)*np.mean(ret)/np.std(ret) # should the mean include moments of no holding?
-        print('APR', APR)
+            sharpe = np.sqrt(time_in_market)*np.mean(ret)/np.std(ret) # should the mean include moments of no holding?
+        print('APR', apr)
         print('Sharpe', sharpe)
 
         # get trade summary
@@ -404,9 +406,13 @@ class Trader:
         ret = ret.fillna(0)
         #ret = ret.dropna()
 
-
-        apr = ((np.prod(1.+ret))**(252./len(ret)))-1
-        sharpe = np.sqrt(252.) * np.mean(ret) / np.std(ret)
+        n_years = round(len(y)/240)
+        time_in_market = 252.*n_years
+        apr = ((np.prod(1.+ret))**(time_in_market/len(ret)))-1
+        if np.std(ret) == 0:
+            sharpe = 0
+        else:
+            sharpe = np.sqrt(time_in_market) * np.mean(ret) / np.std(ret)
         print('APR', apr)
         print('Sharpe', sharpe)
 
@@ -517,7 +523,6 @@ class Trader:
         summary = summary.rename(columns={"numUnits": "current_position"})
         if 'Date' in summary.columns:
             summary = summary.set_index('Date')
-        #summary = summary[36:]
 
         return summary
 
@@ -706,8 +711,10 @@ class Trader:
         """
 
         n_pairs = len(sharpe_results)
+        n_years = round(len(performance[0][1]) / 240) # performance[0][1] contains time series index, thus true length
         avg_sharpe_ratio = np.mean(sharpe_results)
-        avg_ROI = np.mean(cum_returns)
+        avg_total_roi = np.mean(cum_returns)
+        avg_annual_roi = ((1 + (avg_total_roi / 100)) ** (1 / float(n_years)) - 1) * 100
 
         sorted_indices = np.flip(np.argsort(sharpe_results), axis=0)
         # initialize list of lists
@@ -743,7 +750,8 @@ class Trader:
 
         results = {'n_pairs': n_pairs,
                    'avg_sharpe_ratio': avg_sharpe_ratio,
-                   'avg_ROI': avg_ROI,
+                   'avg_total_roi': avg_total_roi,
+                   'avg_annual_roi': avg_annual_roi,
                    'pct_negative_trades_per_pair': avg_negative_trades_per_pair_pct,
                    'pct_pairs_with_negative_results': negative_percentage,
                    'avg_half_life': pairs_df['half_life'].mean(),
