@@ -284,7 +284,7 @@ class Trader:
         return pnl, ret, summary, sharpe
 
 
-    def kalman_filter(self, y, x, entry_multiplier=1.0, exit_multiplier=1.0):
+    def kalman_filter(self, y, x, entry_multiplier=1.0, exit_multiplier=1.0, trading_filter=None):
         '''
         This function implements a Kalman Filter for the estimation of
         the moving hedge ratio
@@ -373,6 +373,22 @@ class Trader:
         numUnitsShort = numUnitsShort.fillna(method='ffill')
 
         numUnits=numUnitsLong+numUnitsShort
+        # apply trading filter
+        if trading_filter is not None:
+            if trading_filter['name'] == 'correlation':
+                numUnits = self.apply_correlation_filter(lookback=trading_filter['lookback'],
+                                                         lag=trading_filter['lag'],
+                                                         threshold=trading_filter['diff_threshold'],
+                                                         Y=y_series,
+                                                         X=x_series,
+                                                         units=numUnits
+                                                         )
+            elif trading_filter['name'] == 'zscore_diff':
+                numUnits = self.apply_zscorediff_filter(lag=trading_filter['lag'],
+                                                        threshold=trading_filter['diff_threshold'],
+                                                        zscore=zscore,
+                                                        units=numUnits
+                                                        )
 
         tmp1 = np.tile(np.matrix(numUnits).T, 2)
         tmp2 = np.hstack((-1*beta[0, :].T,np.ones((len(y),1))))
@@ -428,7 +444,7 @@ class Trader:
             coint_result = pair[2]
             lookback = lookback_multiplier * (coint_result['half_life'])
             if trading_filter is not None:
-                trading_filter['lookback'] = trading_filter['lookback_multiplier']*(coint_result['half_life'])
+                trading_filter['lookback'] = trading_filter['filter_lookback_multiplier']*(coint_result['half_life'])
 
             if lookback >= len(coint_result['Y']):
                 print('Error: lookback is larger than length of the series')
@@ -445,7 +461,7 @@ class Trader:
 
         return sharpe_results, cum_returns, performance
 
-    def apply_kalman_strategy(self, pairs, entry_multiplier=2, exit_multiplier=0.5):
+    def apply_kalman_strategy(self, pairs, entry_multiplier=2, exit_multiplier=0.5, trading_filter=None):
         """
         This function caals the kalman filter implementation for every pair.
 
@@ -461,10 +477,14 @@ class Trader:
         for pair in pairs:
             print('\n\n{},{}'.format(pair[0], pair[1]))
             coint_result = pair[2]
+            if trading_filter is not None:
+                trading_filter['lookback'] = trading_filter['filter_lookback_multiplier'] * (coint_result['half_life'])
+
             pnl, ret, summary, sharpe = self.kalman_filter(y=coint_result['Y'],
                                                            x=coint_result['X'],
                                                            entry_multiplier=entry_multiplier,
-                                                           exit_multiplier=exit_multiplier
+                                                           exit_multiplier=exit_multiplier,
+                                                           trading_filter=trading_filter
                                                            )
             cum_returns.append((np.cumprod(1 + ret) - 1).iloc[-1] * 100)
             sharpe_results.append(sharpe)
@@ -578,6 +598,7 @@ class Trader:
 
         # change positions accordingly
         diff_correlation.name = 'diff_correlation'; units.name = 'units'
+        units.index = diff_correlation.index
         df = pd.concat([diff_correlation, units], axis=1)
         new_df = self.update_positions(df, 'diff_correlation', threshold)
 
@@ -696,7 +717,10 @@ class Trader:
             position_returns = performance[index][1].position_return
             positive_positions = len(position_returns[position_returns > 0])
             negative_positions = len(position_returns[position_returns < 0])
-            data.append([total_pairs[index][2]['p_value'],
+            data.append([total_pairs[index][0],
+                         total_pairs[index][1],
+                         total_pairs[index][2]['t_statistic'],
+                         total_pairs[index][2]['p_value'],
                          total_pairs[index][2]['zero_cross'],
                          total_pairs[index][2]['half_life'],
                          total_pairs[index][2]['hurst_exponent'],
@@ -706,11 +730,11 @@ class Trader:
                          ])
 
         # Create the pandas DataFrame
-        aux_df = pd.DataFrame(data, columns=['p_value', 'zero_cross', 'half_life', 'hurst_exponent', 'positive_trades',
-                                             'negative_trades', 'sharpe_result'])
+        pairs_df = pd.DataFrame(data, columns=['Leg1', 'Leg2', 't_statistic', 'p_value', 'zero_cross', 'half_life',
+                                               'hurst_exponent', 'positive_trades', 'negative_trades', 'sharpe_result'])
 
-        aux_df['pos_neg_ratio'] = aux_df['positive_trades']/aux_df['negative_trades']
-        pos_neg_ratio = aux_df['pos_neg_ratio'].mean()
+        pairs_df['pos_neg_ratio'] = pairs_df['positive_trades']/pairs_df['negative_trades']
+        pos_neg_ratio = pairs_df['pos_neg_ratio'].mean()
 
         sharpe_results = np.asarray(sharpe_results)
         negative_pairs_indices = np.argwhere(sharpe_results < 0)
@@ -721,7 +745,7 @@ class Trader:
                    'avg_ROI': avg_ROI,
                    'positive_negative_ratio': pos_neg_ratio,
                    'negative_pairs_percentage': negative_percentage,
-                   'avg_half_life': aux_df['half_life'].mean(),
-                   'avg_hurst_exponent': aux_df['hurst_exponent'].mean()}
+                   'avg_half_life': pairs_df['half_life'].mean(),
+                   'avg_hurst_exponent': pairs_df['hurst_exponent'].mean()}
 
-        return results
+        return results, pairs_df

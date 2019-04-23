@@ -9,6 +9,7 @@ This script does the following:
 
 import numpy as np
 import json
+import sys
 import class_SeriesAnalyser, class_Trader, class_DataProcessor
 
 # just set the seed for the random number generator
@@ -16,8 +17,9 @@ np.random.seed(107)
 
 if __name__ == "__main__":
 
+    config_path = sys.argv[1]
     # Read configuration file
-    with open('config.json', 'r') as f:
+    with open(config_path, 'r') as f:
         config = json.load(f)
 
     # 1. UPLOAD DATASET
@@ -88,7 +90,8 @@ if __name__ == "__main__":
     elif 'kalman' in trading_strategy:
         sharpe_results, cum_returns, performance = trader.apply_kalman_strategy(pairs,
                                                                                 entry_multiplier=config['trading']['entry_multiplier'],
-                                                                                exit_multiplier=config['trading']['exit_multiplier']
+                                                                                exit_multiplier=config['trading']['exit_multiplier'],
+                                                                                trading_filter=trading_filter
                                                                                 )
         print('Avg sharpe Ratio using kalman: ', np.mean(sharpe_results))
     else:
@@ -96,10 +99,10 @@ if __name__ == "__main__":
         exit()
 
     # get results
-    results = trader.summarize_results(sharpe_results, cum_returns, performance, pairs)
+    results, pairs_summary = trader.summarize_results(sharpe_results, cum_returns, performance, pairs)
 
     # 5. Dump results in excel file
     data_processor.dump_results(dataset=config['dataset'], pca=config['PCA'], clustering=config['clustering'],
                                 pair_restrictions=config['pair_restrictions'], trading=config['trading'],
                                 trading_filter=config['trading_filter'], results=results,
-                                filename=config['output']['filename'])
+                                pairs_summary_df=pairs_summary, filename=config['output']['filename'])

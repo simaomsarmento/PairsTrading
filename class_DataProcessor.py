@@ -186,7 +186,8 @@ class DataProcessor:
         # save the workbook
         writer.save()
 
-    def dump_results(self, dataset, pca, clustering, pair_restrictions, trading, trading_filter, results, filename):
+    def dump_results(self, dataset, pca, clustering, pair_restrictions, trading, trading_filter, results,
+                     pairs_summary_df, filename):
         """
         This functions appends the results obtained into the file given as input
         :param dataset: dictionary containg information regarding the dataset
@@ -239,8 +240,10 @@ class DataProcessor:
                    'avg_hurst_exponent': [results["avg_hurst_exponent"]]
                    }
 
+        current_time = datetime.now()
+
         # Create DataFrame
-        df = pd.DataFrame(summary, index=[datetime.now()])
+        df = pd.DataFrame(summary, index=[current_time])
         df.index.name = 'Date'
         # set order of columns
         cols = ["path", "training_initial_date", "training_final_date", "testing_initial_date", "testing_final_date",
@@ -252,3 +255,6 @@ class DataProcessor:
         df = df[cols]
 
         self.append_df_to_excel(filename=filename, df=df)
+
+        # Store pairs_summary_df
+        pairs_summary_df.to_pickle('summary/dfs/'+current_time.strftime("%m_%d_%Y__%H-%M"))
