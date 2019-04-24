@@ -201,6 +201,7 @@ class Trader:
 
         # get trade summary
         rolling_spread = Y - rolling_beta * X
+        # All series contain Date as index
         series_to_include = [(pnl, 'pnl'), (ret, 'ret'), (rolling_spread, 'spread'), (Y, Y.name), (X, X.name),
                              (zscore, 'zscore'), (numUnits, 'numUnits')]
         summary = self.trade_summary(series_to_include)
@@ -417,11 +418,12 @@ class Trader:
         print('Sharpe', sharpe)
 
         # get summary df
+        # No series should have Date as index
         series_to_include = [(pd.Series(pnl), 'pnl'), (ret.reset_index(drop=True), 'ret'),
                              (y_series.reset_index(drop=True), y_series.name),
                              (x_series.reset_index(), x_series.name),
                              (pd.Series(e), 'e'), (pd.Series(np.sqrt(Q)), 'sqrt(Q)'),
-                             (numUnits, 'numUnits')]
+                             (numUnits.reset_index(drop=True), 'numUnits')]
         summary = self.trade_summary(series_to_include)
 
         return pnl, ret, summary, sharpe
@@ -630,6 +632,7 @@ class Trader:
 
         # change positions accordingly
         zscore_diff.name = 'zscore_diff'; units.name = 'units'
+        units.index = zscore_diff.index
         df = pd.concat([zscore_diff, units], axis=1)
         new_df = self.update_positions(df, 'zscore_diff', threshold)
 
@@ -639,7 +642,7 @@ class Trader:
 
     def update_positions(self, df, attribute, threshold):
         """
-        The following function receives a dataframe containing hte current positions
+        The following function receives a dataframe containing the current positions
         along with the attribute column from which condition should be verified.
         A new df with positions updated accordingly is returned.
 
@@ -661,7 +664,7 @@ class Trader:
                         previous_unit = row['units']
                         continue
                     elif row[attribute] > threshold:  # if criteria is not met, update row
-                        row['units'] = 0
+                        df.loc[index, 'units'] = 0
                         previous_unit = row['units']
                         continue
 
@@ -712,9 +715,13 @@ class Trader:
 
         n_pairs = len(sharpe_results)
         n_years = round(len(performance[0][1]) / 240) # performance[0][1] contains time series index, thus true length
+        print('n_years: ', n_years)
+        print('len: ', len(performance[0][1]))
         avg_sharpe_ratio = np.mean(sharpe_results)
         avg_total_roi = np.mean(cum_returns)
+        print('avg_total_roi', avg_total_roi)
         avg_annual_roi = ((1 + (avg_total_roi / 100)) ** (1 / float(n_years)) - 1) * 100
+        print('avg_annual_roi', avg_annual_roi)
 
         sorted_indices = np.flip(np.argsort(sharpe_results), axis=0)
         # initialize list of lists
