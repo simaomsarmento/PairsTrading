@@ -28,7 +28,7 @@ if __name__ == "__main__":
 
     # get price series for tickers. First sees if df is already stored in pkl file
     dataset_name = config['dataset']['path'].replace("data/etfs/", "").replace(".xlsx", "")
-    dataset_name = dataset_name + '_' + config['dataset']['initial_date'] + '_' + config['dataset']['final_date']
+    dataset_name = dataset_name + '_' + config['dataset']['training_initial_date'] + '_' + config['dataset']['testing_final_date']
     try:
         # try to retrieve from pickle if repeated file
         df_prices = pd.read_pickle('data/etfs/pickle/'+dataset_name)
@@ -37,12 +37,12 @@ if __name__ == "__main__":
         _, df_tickers, tickers = data_processor.read_ticker_excel(
             ticker_attribute=config['dataset']['ticker_attribute'])
         # obtain prices
-        ticker_prices = data_processor.read_tickers_prices(tickers=tickers,
-                                                       initial_date=config['dataset']['initial_date'],
-                                                       final_date=config['dataset']['final_date'],
+        ticker_prices_dict = data_processor.read_tickers_prices(tickers=tickers,
+                                                       initial_date=config['dataset']['training_initial_date'],
+                                                       final_date=config['dataset']['testing_final_date'],
                                                        data_source=config['dataset']['data_source']
                                                        )
-        _, df_prices = data_processor.dict_to_df(ticker_prices, config['dataset']['nan_threshold'])
+        _, df_prices = data_processor.dict_to_df(ticker_prices_dict, config['dataset']['nan_threshold'])
         # save in pickle file
         df_prices.to_pickle('data/etfs/pickle/'+dataset_name)
 

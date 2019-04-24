@@ -38,7 +38,7 @@ class SeriesAnalyser:
 
         return {'t_statistic': result[0], 'p_value': result[1], 'critical_values': result[4]}
 
-    def check_for_cointegration(self, X, Y):
+    def check_for_cointegration(self, train_series, test_series):
         """
         Gets two time series as inputs and provides information concerning cointegration stasttics
         Y - b*X : Y is dependent, X is independent
@@ -48,6 +48,8 @@ class SeriesAnalyser:
         # t_statistic, p_value, crit_value = coint(X,Y, method='aeg')
 
         # perform test manally in both directions
+        X = train_series[0];
+        Y = train_series[1]
         pairs = [(X, Y), (Y, X)]
         coint_stats = [0] * 2
 
@@ -76,39 +78,49 @@ class SeriesAnalyser:
                               'half_life': int(round(hl)),
                               'hurst_exponent': hurst_exponent,
                               'spread': spread,
-                              'Y': S2,
-                              'X': S1
+                              'Y_train': S2,
+                              'X_train': S1
                               }
 
         # select lowest t-statistic as representative test
         if abs(coint_stats[0]['t_statistic']) > abs(coint_stats[1]['t_statistic']):
             coint_result = coint_stats[0]
+            coint_result['X_test']=test_series[0]
+            coint_result['Y_test'] = test_series[1]
 
         else:
             coint_result = coint_stats[1]
+            coint_result['X_test'] = test_series[1]
+            coint_result['Y_test'] = test_series[0]
 
         return coint_result
 
-    def find_pairs(self, data, p_value_threshold, min_half_life=5, min_zero_crossings=0, hurst_threshold=0.5):
+    def find_pairs(self, data_train, data_test, p_value_threshold, min_half_life=5, min_zero_crossings=0,
+                   hurst_threshold=0.5):
         """
         This function receives a df with the different securities as columns, and aims to find tradable
-        pairs within this world.
+        pairs within this world. There is a df containing the training data and another one containing test data
         Tradable pairs are those that verify:
             - cointegration
             - minimium half life
             - minimium zero crossings
-        : data - df with price data as columns
-        : threshold - pvalue threshold for a pair to be cointegrated
-        : min_half_life - minimium half life value of the spread to consider the pair
+
+        :param data_train: df with training prices in columns
+        :param data_test: df with testing prices in columns
+        :param p_value_threshold:  pvalue threshold for a pair to be cointegrated
+        :param min_half_life: minimium half life value of the spread to consider the pair
+        :param min_zero_crossings: minimium number of allowed zero crossings
+        :param hurst_threshold: mimimium acceptable number for hurst threshold
+        :return: pairs that passed test
         """
-        n = data.shape[1]
-        keys = data.keys()
+        n = data_train.shape[1]
+        keys = data_train.keys()
         pairs = []
         for i in range(n):
             for j in range(i + 1, n):
-                S1 = data[keys[i]]
-                S2 = data[keys[j]]
-                result = self.check_for_cointegration(S1, S2)
+                S1_train = data_train[keys[i]]; S2_train = data_train[keys[j]]
+                S1_test = data_test[keys[i]]; S2_test = data_test[keys[j]]
+                result = self.check_for_cointegration((S1_train, S2_train), (S1_test, S2_test))
                 pvalue = result['p_value']
                 if pvalue < p_value_threshold: # verifies required pvalue
                     hl = self.calculate_half_life(result['spread'])
@@ -311,7 +323,7 @@ class SeriesAnalyser:
         return best_n_comp['X'], best_n_comp['clustered_series_all'], best_n_comp['clustered_series'], best_n_comp[
             'counts'], best_n_comp['clf']
 
-    def get_candidate_pairs(self, clustered_series, pricing_df, n_clusters, min_half_life=5,
+    def get_candidate_pairs(self, clustered_series, pricing_df_train, pricing_df_test, n_clusters, min_half_life=5,
                             min_zero_crosings=20, p_value_threshold=0.05, hurst_threshold=0.5):
         """
         This function looks for tradable pairs over the clusters formed previously.
@@ -331,8 +343,10 @@ class SeriesAnalyser:
         total_pairs = []
         for clust in range(n_clusters):
             symbols = list(clustered_series[clustered_series == clust].index)
-            cluster_pricing = pricing_df[symbols]
-            pairs = self.find_pairs(cluster_pricing,
+            cluster_pricing_train = pricing_df_train[symbols]
+            cluster_pricing_test = pricing_df_test[symbols]
+            pairs = self.find_pairs(cluster_pricing_train,
+                                    cluster_pricing_test,
                                     p_value_threshold,
                                     min_half_life,
                                     min_zero_crosings,

@@ -458,11 +458,11 @@ class Trader:
                 print('Error: lookback is larger than length of the series')
 
             pnl, ret, summary, sharpe = self.bollinger_bands(coint_result['Y'],
-                                                                 coint_result['X'],
-                                                                 lookback,
-                                                                 entry_multiplier,
-                                                                 exit_multiplier,
-                                                                 trading_filter)
+                                                             coint_result['X'],
+                                                             lookback,
+                                                             entry_multiplier,
+                                                             exit_multiplier,
+                                                             trading_filter)
             cum_returns.append((np.cumprod(1 + ret) - 1)[-1] * 100)
             sharpe_results.append(sharpe)
             performance.append((pair, summary))
