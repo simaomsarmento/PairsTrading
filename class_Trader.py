@@ -429,7 +429,7 @@ class Trader:
         return pnl, ret, summary, sharpe
 
     def apply_bollinger_strategy(self, pairs, lookback_multiplier, entry_multiplier=2, exit_multiplier=0.5,
-                                 trading_filter=None):
+                                 trading_filter=None, test_mode = False):
         """
 
         :param pairs: pairs to trade
@@ -437,6 +437,7 @@ class Trader:
         :param entry_multiplier: multiplier to define position entry level
         :param exit_multiplier: multiplier to define position exit level
         :param trading_filter: trading_flter dictionary with parameters or None object in case of no filter
+        :param test_mode: flag to decide whether to apply strategy on the training set or in the test set
 
         :return: sharpe ratio results
         :return: cumulative returns
@@ -454,27 +455,35 @@ class Trader:
             if trading_filter is not None:
                 trading_filter['lookback'] = trading_filter['filter_lookback_multiplier']*(coint_result['half_life'])
 
-            if lookback >= len(coint_result['Y']):
+            if lookback >= len(coint_result['Y_train']):
                 print('Error: lookback is larger than length of the series')
 
-            pnl, ret, summary, sharpe = self.bollinger_bands(coint_result['Y_train'],
-                                                             coint_result['X_train'],
-                                                             lookback,
-                                                             entry_multiplier,
-                                                             exit_multiplier,
-                                                             trading_filter)
+            if test_mode:
+                y = coint_result['Y_test']
+                x = coint_result['X_test']
+            else:
+                y = coint_result['Y_train']
+                x = coint_result['X_train']
+            pnl, ret, summary, sharpe = self.bollinger_bands(Y=y,X=x,
+                                                             lookback=lookback,
+                                                             entry_multiplier=entry_multiplier,
+                                                             exit_multiplier=exit_multiplier,
+                                                             trading_filter=trading_filter)
             cum_returns.append((np.cumprod(1 + ret) - 1)[-1] * 100)
             sharpe_results.append(sharpe)
             performance.append((pair, summary))
 
         return sharpe_results, cum_returns, performance
 
-    def apply_kalman_strategy(self, pairs, entry_multiplier=2, exit_multiplier=0.5, trading_filter=None):
+    def apply_kalman_strategy(self, pairs, entry_multiplier=2, exit_multiplier=0.5, trading_filter=None,
+                              test_mode=False):
         """
         This function caals the kalman filter implementation for every pair.
 
         :param entry_multiplier: threshold that defines where to enter a position
         :param exit_multiplier: threshold that defines where to exit a position
+        :param trading_filter:  trading_flter dictionary with parameters or None object in case of no filter
+        :param test_mode: flag to decide whether to apply strategy on the training set or in the test set
 
         :return: sharpe ratio results
         :return: cumulative returns
@@ -488,12 +497,16 @@ class Trader:
             if trading_filter is not None:
                 trading_filter['lookback'] = trading_filter['filter_lookback_multiplier'] * (coint_result['half_life'])
 
-            pnl, ret, summary, sharpe = self.kalman_filter(y=coint_result['Y_train'],
-                                                           x=coint_result['X_train'],
+            if test_mode:
+                y = coint_result['Y_test']
+                x = coint_result['X_test']
+            else:
+                y = coint_result['Y_train']
+                x = coint_result['X_train']
+            pnl, ret, summary, sharpe = self.kalman_filter(y=y, x=x,
                                                            entry_multiplier=entry_multiplier,
                                                            exit_multiplier=exit_multiplier,
-                                                           trading_filter=trading_filter
-                                                           )
+                                                           trading_filter=trading_filter)
             cum_returns.append((np.cumprod(1 + ret) - 1).iloc[-1] * 100)
             sharpe_results.append(sharpe)
             performance.append((pair, summary))

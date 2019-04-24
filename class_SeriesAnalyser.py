@@ -85,7 +85,7 @@ class SeriesAnalyser:
         # select lowest t-statistic as representative test
         if abs(coint_stats[0]['t_statistic']) > abs(coint_stats[1]['t_statistic']):
             coint_result = coint_stats[0]
-            coint_result['X_test']=test_series[0]
+            coint_result['X_test'] = test_series[0]
             coint_result['Y_test'] = test_series[1]
 
         else:

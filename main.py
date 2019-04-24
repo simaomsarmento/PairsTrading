@@ -66,6 +66,14 @@ if __name__ == "__main__":
                                          X, df_returns)
 
     # 3. FIND GOOD CANDIDATE PAIRS
+    #
+    #
+    #
+    #CHANGE PRICING_DF_TEST
+    #
+    #
+    #
+    #
     pairs, unique_tickers = series_analyser.get_candidate_pairs(clustered_series=clustered_series,
                                                                 pricing_df_train=df_prices,
                                                                 pricing_df_test=df_prices,
@@ -93,7 +101,8 @@ if __name__ == "__main__":
                                                                                    lookback_multiplier=config['trading']['lookback_multiplier'],
                                                                                    entry_multiplier=config['trading']['entry_multiplier'],
                                                                                    exit_multiplier=config['trading']['exit_multiplier'],
-                                                                                   trading_filter=trading_filter
+                                                                                   trading_filter=trading_filter,
+                                                                                   test_mode=False
                                                                                    )
         print('Avg sharpe Ratio using Bollinger: ', np.mean(sharpe_results))
 
@@ -101,7 +110,8 @@ if __name__ == "__main__":
         sharpe_results, cum_returns, performance = trader.apply_kalman_strategy(pairs,
                                                                                 entry_multiplier=config['trading']['entry_multiplier'],
                                                                                 exit_multiplier=config['trading']['exit_multiplier'],
-                                                                                trading_filter=trading_filter
+                                                                                trading_filter=trading_filter,
+                                                                                test_mode=False
                                                                                 )
         print('Avg sharpe Ratio using kalman: ', np.mean(sharpe_results))
     else:
