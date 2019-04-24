@@ -457,8 +457,8 @@ class Trader:
             if lookback >= len(coint_result['Y']):
                 print('Error: lookback is larger than length of the series')
 
-            pnl, ret, summary, sharpe = self.bollinger_bands(coint_result['Y'],
-                                                             coint_result['X'],
+            pnl, ret, summary, sharpe = self.bollinger_bands(coint_result['Y_train'],
+                                                             coint_result['X_train'],
                                                              lookback,
                                                              entry_multiplier,
                                                              exit_multiplier,
@@ -488,8 +488,8 @@ class Trader:
             if trading_filter is not None:
                 trading_filter['lookback'] = trading_filter['filter_lookback_multiplier'] * (coint_result['half_life'])
 
-            pnl, ret, summary, sharpe = self.kalman_filter(y=coint_result['Y'],
-                                                           x=coint_result['X'],
+            pnl, ret, summary, sharpe = self.kalman_filter(y=coint_result['Y_train'],
+                                                           x=coint_result['X_train'],
                                                            entry_multiplier=entry_multiplier,
                                                            exit_multiplier=exit_multiplier,
                                                            trading_filter=trading_filter

@@ -67,7 +67,8 @@ if __name__ == "__main__":
 
     # 3. FIND GOOD CANDIDATE PAIRS
     pairs, unique_tickers = series_analyser.get_candidate_pairs(clustered_series=clustered_series,
-                                                                pricing_df=df_prices,
+                                                                pricing_df_train=df_prices,
+                                                                pricing_df_test=df_prices,
                                                                 n_clusters=len(counts),
                                                                 min_half_life=config['pair_restrictions']['min_half_life'],
                                                                 min_zero_crosings=config['pair_restrictions']['min_zero_crossings'],

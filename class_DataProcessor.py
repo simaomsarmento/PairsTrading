@@ -204,8 +204,8 @@ class DataProcessor:
         summary = {
                    # Dataset
                    "path": [dataset['path']],
-                   "training_initial_date": [dataset['initial_date']],
-                   "training_final_date": [dataset['final_date']],
+                   "training_initial_date": [dataset['training_initial_date']],
+                   "training_final_date": [dataset['training_final_date']],
                    "testing_initial_date": [dataset['testing_initial_date']],
                    "testing_final_date": [dataset['testing_final_date']],
                    # PCA
