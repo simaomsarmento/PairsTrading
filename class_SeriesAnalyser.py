@@ -334,6 +334,7 @@ class SeriesAnalyser:
         for n_comp in range(min_components, max_components):
             print('\nNumber of components: ', n_comp)
             # Apply PCA on data
+            print('Returns shape: ', returns.shape)
             X, _ = self.apply_PCA(n_comp, returns)
             # Apply DBSCAN
             clustered_series_all, clustered_series, counts, clf = self.apply_DBSCAN(

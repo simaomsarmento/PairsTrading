@@ -113,6 +113,23 @@ class DataProcessor:
 
         return df_returns
 
+    def split_data(self, df_prices, training_final_date, testing_initial_date):
+        """
+        This function splits a dataframe into training and validation sets
+        :param df_prices: dataframe containing prices for all dates
+        :param training_final_date: final date for training set
+        :param testing_initial_date: initial date for test set
+
+        :return: df with training prices
+        :return: df with testing prices
+        """
+        train_mask = (df_prices.index <= training_final_date)
+        test_mask = (df_prices.index >= testing_initial_date)
+        df_prices_train = df_prices[train_mask]
+        df_prices_test = df_prices[test_mask]
+
+        return df_prices_train, df_prices_test
+
     def append_df_to_excel(self, filename, df, sheet_name='Sheet1', startrow=None,
                            truncate_sheet=False,
                            **to_excel_kwargs):
@@ -186,7 +203,7 @@ class DataProcessor:
         # save the workbook
         writer.save()
 
-    def dump_results(self, dataset, pca, clustering, pair_restrictions, trading, trading_filter, results,
+    def dump_results(self, dataset, pca, clustering, pair_restrictions, trading, trading_filter, results, train_metrics,
                      pairs_summary_df, filename):
         """
         This functions appends the results obtained into the file given as input
@@ -197,6 +214,8 @@ class DataProcessor:
         :param trading: dictionary containg information regarding the trading requisites
         :param trading_filter: dictionary containg information regarding the trading filter used
         :param results: dictionary containg information regarding the results obtained
+        :param train_metrics: list containing metrics from training set
+        :param pairs_summary_df: dataframe with statistics from every pair
         :param filename: filename of where to write the summary info
         """
 
@@ -230,7 +249,11 @@ class DataProcessor:
                    "filter_lookback_multiplier": [trading_filter["filter_lookback_multiplier"]],
                    "filter_lag": [trading_filter["lag"]],
                    "filter_diff_threshold": [trading_filter["diff_threshold"]],
-                   # Result statistics
+                   # Result statistics training
+                   'avg_sharpe_ratio_train': [train_metrics[0]],
+                   'avg_total_roi_train': [train_metrics[1]],
+                   'avg_annual_roi_train': [train_metrics[2]],
+                   # Results statistics testing
                    "n_pairs": [results["n_pairs"]],
                    'avg_sharpe_ratio': [results["avg_sharpe_ratio"]],
                    'avg_total_roi': [results["avg_total_roi"]],
@@ -248,12 +271,12 @@ class DataProcessor:
         df.index.name = 'Date'
         # set order of columns
         cols = ["path", "training_initial_date", "training_final_date", "testing_initial_date", "testing_final_date",
-                "n_components_PCA", "clustering_algo", "epsilon", "min_samples",
-                "min_half_life", "min_zero_crossings", "p_value_threshold", "hurst_threshold", "strategy",
-                "lookback_multiplier", "entry_multiplier", "exit_multiplier", "active", "filter_name",
-                "filter_lookback_multiplier", "filter_lag", "filter_diff_threshold", "n_pairs", 'avg_sharpe_ratio',
-                'avg_total_roi', 'avg_annual_roi', 'pct_negative_trades_per_pair', 'pct_pairs_with_negative_results',
-                'avg_half_life', 'avg_hurst_exponent']
+                "n_components_PCA", "clustering_algo", "epsilon", "min_samples", "min_half_life", "min_zero_crossings",
+                "p_value_threshold", "hurst_threshold", "strategy", "lookback_multiplier", "entry_multiplier",
+                "exit_multiplier", "active", "filter_name", "filter_lookback_multiplier", "filter_lag",
+                "filter_diff_threshold", 'avg_sharpe_ratio_train', "avg_annual_roi_train", "n_pairs",
+                'avg_sharpe_ratio', 'avg_total_roi_train','avg_total_roi', 'avg_annual_roi',
+                'pct_negative_trades_per_pair', 'pct_pairs_with_negative_results','avg_half_life', 'avg_hurst_exponent']
         df = df[cols]
 
         self.append_df_to_excel(filename=filename, df=df)

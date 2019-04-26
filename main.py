@@ -46,8 +46,13 @@ if __name__ == "__main__":
         # save in pickle file
         df_prices.to_pickle('data/etfs/pickle/'+dataset_name)
 
+    # split data in training and validation
+    df_prices_train, df_prices_test = data_processor.split_data(df_prices,
+                                                                config['dataset']['training_final_date'],
+                                                                config['dataset']['testing_initial_date'])
+
     # get return series
-    df_returns = data_processor.get_return_series(df_prices)
+    df_returns_train = data_processor.get_return_series(df_prices_train)
 
     # 2. APPLY PCA and CLUSTERING
     series_analyser = class_SeriesAnalyser.SeriesAnalyser()
@@ -56,27 +61,19 @@ if __name__ == "__main__":
         range_n_components = config['PCA']['N_COMPONENTS']
         X, clustered_series_all, clustered_series, counts, clf = \
             series_analyser.clustering_for_optimal_PCA(range_n_components[0], range_n_components[1],
-                                                       df_returns, config['clustering'])
+                                                       df_returns_train, config['clustering'])
     except:
         # PCA
-        X, explained_variance = series_analyser.apply_PCA(config['PCA']['N_COMPONENTS'], df_returns)
+        X, explained_variance = series_analyser.apply_PCA(config['PCA']['N_COMPONENTS'], df_returns_train)
         # Clustering
         clustered_series_all, clustered_series, counts, clf = \
             series_analyser.apply_DBSCAN(config['clustering']['epsilon'], config['clustering']['min_samples'],
-                                         X, df_returns)
+                                         X, df_returns_train)
 
     # 3. FIND GOOD CANDIDATE PAIRS
-    #
-    #
-    #
-    #CHANGE PRICING_DF_TEST
-    #
-    #
-    #
-    #
     pairs, unique_tickers = series_analyser.get_candidate_pairs(clustered_series=clustered_series,
-                                                                pricing_df_train=df_prices,
-                                                                pricing_df_test=df_prices,
+                                                                pricing_df_train=df_prices_train,
+                                                                pricing_df_test=df_prices_test,
                                                                 n_clusters=len(counts),
                                                                 min_half_life=config['pair_restrictions']['min_half_life'],
                                                                 min_zero_crosings=config['pair_restrictions']['min_zero_crossings'],
@@ -85,6 +82,8 @@ if __name__ == "__main__":
                                                                 )
 
     # 4. APPLY TRADING STRATEGY
+    # we first apply the strategy to the training data, to further discard the pairs that were not
+    # profitable not even in the training period
     trader = class_Trader.Trader()
 
     # obtain trading strategy
@@ -96,6 +95,7 @@ if __name__ == "__main__":
     else:
         trading_filter = None
 
+    # Run on TRAINING SET
     if 'bollinger' in trading_strategy:
         sharpe_results, cum_returns, performance = trader.apply_bollinger_strategy(pairs=pairs,
                                                                                    lookback_multiplier=config['trading']['lookback_multiplier'],
@@ -104,7 +104,6 @@ if __name__ == "__main__":
                                                                                    trading_filter=trading_filter,
                                                                                    test_mode=False
                                                                                    )
-        print('Avg sharpe Ratio using Bollinger: ', np.mean(sharpe_results))
 
     elif 'kalman' in trading_strategy:
         sharpe_results, cum_returns, performance = trader.apply_kalman_strategy(pairs,
@@ -113,10 +112,39 @@ if __name__ == "__main__":
                                                                                 trading_filter=trading_filter,
                                                                                 test_mode=False
                                                                                 )
-        print('Avg sharpe Ratio using kalman: ', np.mean(sharpe_results))
     else:
         print('Please insert valid trading strategy: 1. "bollinger" or 2."kalman"')
         exit()
+
+    # get ROI for training
+    print('Train years ', round(len(df_prices_train) / 240))
+    train_metrics = trader.calculate_metrics(sharpe_results, cum_returns, round(len(df_prices_train)/240))
+
+
+    # filter pairs with positive results
+    sharpe_results = np.asarray(sharpe_results)
+    positive_pairs_indices = np.argwhere(sharpe_results > 0)
+    positive_pairs = [pairs[i] for i in positive_pairs_indices.flatten()]
+
+    # Run on TEST SET
+    if 'bollinger' in trading_strategy:
+        sharpe_results, cum_returns, performance = trader.apply_bollinger_strategy(pairs=positive_pairs,
+                                                                                   lookback_multiplier=config['trading']['lookback_multiplier'],
+                                                                                   entry_multiplier=config['trading']['entry_multiplier'],
+                                                                                   exit_multiplier=config['trading']['exit_multiplier'],
+                                                                                   trading_filter=trading_filter,
+                                                                                   test_mode=True
+                                                                                   )
+        print('Avg sharpe Ratio using Bollinger in test set: ', np.mean(sharpe_results))
+
+    elif 'kalman' in trading_strategy:
+        sharpe_results, cum_returns, performance = trader.apply_kalman_strategy(positive_pairs,
+                                                                                entry_multiplier=config['trading']['entry_multiplier'],
+                                                                                exit_multiplier=config['trading']['exit_multiplier'],
+                                                                                trading_filter=trading_filter,
+                                                                                test_mode=True
+                                                                                )
+        print('Avg sharpe Ratio using kalman in the test set: ', np.mean(sharpe_results))
 
     # get results
     results, pairs_summary = trader.summarize_results(sharpe_results, cum_returns, performance, pairs)
@@ -126,5 +154,5 @@ if __name__ == "__main__":
     # - stores dataframe with info regarding every pair in pickle file
     data_processor.dump_results(dataset=config['dataset'], pca=config['PCA'], clustering=config['clustering'],
                                 pair_restrictions=config['pair_restrictions'], trading=config['trading'],
-                                trading_filter=config['trading_filter'], results=results,
+                                trading_filter=config['trading_filter'], results=results, train_metrics=train_metrics,
                                 pairs_summary_df=pairs_summary, filename=config['output']['filename'])

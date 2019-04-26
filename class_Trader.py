@@ -190,15 +190,14 @@ class Trader:
         ret= ret.fillna(0)
 
         n_years = round(len(Y) / 240) # approx of # of years, as each year does not have exactly 252 days
-        print('Considered {} years'.format(n_years))
         time_in_market = 252. * n_years
         apr = ((np.prod(1.+ret))**(time_in_market/len(ret)))-1
         if np.std(ret) == 0:
             sharpe = 0
         else:
             sharpe = np.sqrt(time_in_market)*np.mean(ret)/np.std(ret) # should the mean include moments of no holding?
-        print('APR', apr)
-        print('Sharpe', sharpe)
+        #print('APR', apr)
+        #print('Sharpe', sharpe)
 
         # get trade summary
         rolling_spread = Y - rolling_beta * X
@@ -450,7 +449,7 @@ class Trader:
         performance = []  # aux variable to store pairs' record
 
         for pair in pairs:
-            print('\n\n{},{}'.format(pair[0], pair[1]))
+            #print('\n\n{},{}'.format(pair[0], pair[1]))
             coint_result = pair[2]
             lookback = lookback_multiplier * (coint_result['half_life'])
             if trading_filter is not None:
