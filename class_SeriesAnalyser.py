@@ -48,7 +48,7 @@ class SeriesAnalyser:
         # t_statistic, p_value, crit_value = coint(X,Y, method='aeg')
 
         # perform test manally in both directions
-        X = train_series[0];
+        X = train_series[0]
         Y = train_series[1]
         pairs = [(X, Y), (Y, X)]
         coint_stats = [0] * 2
@@ -329,7 +329,8 @@ class SeriesAnalyser:
         This function looks for tradable pairs over the clusters formed previously.
 
         :param clustered_series: series with cluster label info
-        :param pricing_df: df with price series
+        :param pricing_df_train: df with price series from train set
+        :param pricing_df_test: df with price series from test set
         :param n_clusters: number of clusters
         :param min_half_life: min half life of a time series to be considered as candidate
         :param min_zero_crosings: min number of zero crossings (or mean crossings)

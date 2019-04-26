@@ -190,6 +190,7 @@ class Trader:
         ret= ret.fillna(0)
 
         n_years = round(len(Y) / 240) # approx of # of years, as each year does not have exactly 252 days
+        print('Considered {} years'.format(n_years))
         time_in_market = 252. * n_years
         apr = ((np.prod(1.+ret))**(time_in_market/len(ret)))-1
         if np.std(ret) == 0:
@@ -414,8 +415,8 @@ class Trader:
             sharpe = 0
         else:
             sharpe = np.sqrt(time_in_market) * np.mean(ret) / np.std(ret)
-        print('APR', apr)
-        print('Sharpe', sharpe)
+        #print('APR', apr)
+        #print('Sharpe', sharpe)
 
         # get summary df
         # No series should have Date as index
@@ -467,7 +468,7 @@ class Trader:
             pnl, ret, summary, sharpe = self.bollinger_bands(Y=y,X=x,
                                                              lookback=lookback,
                                                              entry_multiplier=entry_multiplier,
-                                                             exit_multiplier=exit_multiplier,
+                                                             exit_multiplier=int(exit_multiplier),
                                                              trading_filter=trading_filter)
             cum_returns.append((np.cumprod(1 + ret) - 1)[-1] * 100)
             sharpe_results.append(sharpe)
@@ -492,7 +493,7 @@ class Trader:
         cum_returns = []
         performance = []  # aux variable to store pairs' record
         for pair in pairs:
-            print('\n\n{},{}'.format(pair[0], pair[1]))
+            # print('\n\n{},{}'.format(pair[0], pair[1]))
             coint_result = pair[2]
             if trading_filter is not None:
                 trading_filter['lookback'] = trading_filter['filter_lookback_multiplier'] * (coint_result['half_life'])
@@ -714,6 +715,35 @@ class Trader:
 
         return df
 
+    def calculate_metrics(self, sharpe_results, cum_returns, n_years):
+        """
+        Calculate common metrics on average over all pairs.
+
+        :param sharpe_results: array with sharpe result of every pair
+        :param cum_returns: array with cumulative returns of every pair
+        :param n_years: numbers of yers of the trading strategy
+
+        :return: average sharpe ratio
+        :return: average average total roi
+        :return: average annual roi
+        :return: percentage of pairs with positive returns
+        """
+
+        avg_sharpe_ratio = np.mean(sharpe_results)
+        print('Average result: ', avg_sharpe_ratio)
+
+        avg_total_roi = np.mean(cum_returns)
+        print('avg_total_roi: ', avg_total_roi)
+
+        avg_annual_roi = ((1 + (avg_total_roi / 100)) ** (1 / float(n_years)) - 1) * 100
+        print('avg_annual_roi: ', avg_annual_roi)
+
+        sharpe_results = np.asarray(sharpe_results)
+        positive_pct = len(sharpe_results[sharpe_results > 0]) * 100 / len(sharpe_results)
+        print('{} % of the pairs had positive returns'.format(positive_pct))
+
+        return avg_sharpe_ratio, avg_total_roi, avg_annual_roi, positive_pct
+
     def summarize_results(self, sharpe_results, cum_returns, performance, total_pairs):
         """
         This function summarizes interesting metrics to include in the final output
@@ -726,15 +756,9 @@ class Trader:
         :return: dictionary with metrics of interest
         """
 
-        n_pairs = len(sharpe_results)
-        n_years = round(len(performance[0][1]) / 240) # performance[0][1] contains time series index, thus true length
-        print('n_years: ', n_years)
-        print('len: ', len(performance[0][1]))
-        avg_sharpe_ratio = np.mean(sharpe_results)
-        avg_total_roi = np.mean(cum_returns)
-        print('avg_total_roi', avg_total_roi)
-        avg_annual_roi = ((1 + (avg_total_roi / 100)) ** (1 / float(n_years)) - 1) * 100
-        print('avg_annual_roi', avg_annual_roi)
+        n_years = round(len(performance[0][1]) / 240)  # performance[0][1] contains time series index, thus true length
+        avg_sharpe_ratio, avg_total_roi, avg_annual_roi, positive_pct = \
+            self.calculate_metrics(sharpe_results, cum_returns, n_years)
 
         sorted_indices = np.flip(np.argsort(sharpe_results), axis=0)
         # initialize list of lists
@@ -764,16 +788,12 @@ class Trader:
                                                    (pairs_df['positive_trades']+pairs_df['negative_trades'])*100
         avg_negative_trades_per_pair_pct = pairs_df['negative_trades_per_pair_pct'].mean()
 
-        sharpe_results = np.asarray(sharpe_results)
-        negative_pairs_indices = np.argwhere(sharpe_results < 0)
-        negative_percentage = len(negative_pairs_indices)/len(sharpe_results)*100
-
-        results = {'n_pairs': n_pairs,
+        results = {'n_pairs': len(sharpe_results),
                    'avg_sharpe_ratio': avg_sharpe_ratio,
                    'avg_total_roi': avg_total_roi,
                    'avg_annual_roi': avg_annual_roi,
                    'pct_negative_trades_per_pair': avg_negative_trades_per_pair_pct,
-                   'pct_pairs_with_negative_results': negative_percentage,
+                   'pct_pairs_with_negative_results': 100 - positive_pct,
                    'avg_half_life': pairs_df['half_life'].mean(),
                    'avg_hurst_exponent': pairs_df['hurst_exponent'].mean()}
 
