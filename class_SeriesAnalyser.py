@@ -131,6 +131,48 @@ class SeriesAnalyser:
 
         return pairs
 
+    def pairs_overlap(self, pairs, p_value_threshold, min_zero_crossings, min_half_life, hurst_threshold):
+        """
+        This function receives the pairs identified in the training set, and returns a list of the pairs
+        which are still cointegrated in the test set.
+
+        :param pairs: list of pairs in the train set for which to verify cointegration in the test set
+        :param p_value_threshold: p_value to consider cointegration
+        :param min_zero_crossings: zero crossings to consider cointegration
+        :param min_half_life: minimum half-life to consider cointegration
+        :param hurst_threshold:  maximum threshold to consider cointegration
+
+        :return: list with pairs overlapped
+        :return: list with indices from the pairs overlapped
+        """
+        pairs_overlapped = []
+        pairs_overlapped_index = []
+
+        for index, pair in enumerate(pairs):
+            # get consituents
+            X = pair[2]['X_test']
+            Y = pair[2]['Y_test']
+            # check if pairs is valid
+            series_name = X.name
+            X = sm.add_constant(X)
+            results = sm.OLS(Y, X).fit()
+            X = X[series_name]
+            b = results.params[X.name]
+            spread = Y - b * X
+            stats = self.check_for_stationarity(pd.Series(spread, name='Spread'))
+
+            if stats['p_value'] < p_value_threshold:  # verifies required pvalue
+                hl = self.calculate_half_life(spread)
+                if hl >= min_half_life:  # verifies required half life
+                    zero_cross = self.zero_crossings(spread)
+                    if zero_cross >= min_zero_crossings:  # verifies required zero crossings
+                        hurst_exponent = self.hurst(spread)
+                        if hurst_exponent < hurst_threshold:  # verifies hurst exponent
+                            pairs_overlapped.append(pair)
+                            pairs_overlapped_index.append(index)
+
+        return pairs_overlapped, pairs_overlapped_index
+
     def zscore(self, series):
         """
         Returns the nromalized time series assuming a normal distribution
