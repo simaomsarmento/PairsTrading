@@ -2,7 +2,7 @@
     "dataset": {
         "path": "data/etfs/pickle/commodity_ETFs_long_updated",
         "ticker_attribute": "Ticker",
-        "training_initial_date": "02-02-2013",
+        "training_initial_date": "01-01-2013",
         "training_final_date": "01-01-2017",
         "testing_initial_date": "01-01-2017",
         "testing_final_date": "01-01-2019",

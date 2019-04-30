@@ -286,12 +286,20 @@ class Trader:
 
         return pnl, ret, summary, sharpe
 
-
-    def kalman_filter(self, y, x, entry_multiplier=1.0, exit_multiplier=1.0, trading_filter=None):
-        '''
+    def kalman_filter(self, y, x, entry_multiplier=1.0, exit_multiplier=1.0, stabilizing_threshold=5,
+                      trading_filter=None):
+        """
         This function implements a Kalman Filter for the estimation of
         the moving hedge ratio
-        '''
+
+        :param y:
+        :param x:
+        :param entry_multiplier:
+        :param exit_multiplier:
+        :param stabilizing_threshold:
+        :param trading_filter:
+        :return:
+        """
 
         # store series for late usage
         x_series = x.copy()
@@ -364,8 +372,14 @@ class Trader:
 
         numUnitsLong = pd.Series([np.nan for i in range(len(y))])
         numUnitsShort = pd.Series([np.nan for i in range(len(y))])
+        # initialize with zero
         numUnitsLong[0]=0.
         numUnitsShort[0]=0.
+        # remove trades while the spread is stabilizing
+        longsEntry[:stabilizing_threshold] = False
+        longsExit[:stabilizing_threshold] = False
+        shortsEntry[:stabilizing_threshold] = False
+        shortsExit[:stabilizing_threshold] = False
 
         numUnitsLong[longsEntry]=1.
         numUnitsLong[longsExit]=0
@@ -712,7 +726,7 @@ class Trader:
         :return: df with extra column providing return information for each position
         """
 
-        df['position_return (%)'] = 0
+        df['position_return_(%)'] = 0
         previous_unit = 0.
         position_ret_acc = 1.
         for index, row in df.iterrows():
@@ -727,7 +741,7 @@ class Trader:
                 else:
                     # update position returns
                     position_ret_acc = position_ret_acc * (1+row['ret'])
-                    df.loc[index, 'position_return'] = (position_ret_acc-1)*100
+                    df.loc[index, 'position_return_(%)'] = (position_ret_acc-1)*100
                     position_ret_acc = 1.
                     previous_unit = row['numUnits']
                     continue
@@ -780,12 +794,12 @@ class Trader:
             self.calculate_metrics(sharpe_results, cum_returns, n_years)
 
         sorted_indices = np.flip(np.argsort(sharpe_results), axis=0)
-
+        print(sorted_indices)
         # initialize list of lists
         data = []
         for index in sorted_indices:
             # get number of positive and negative positions
-            position_returns = performance[index][1].position_return
+            position_returns = performance[index][1]['position_return_(%)']
             positive_positions = len(position_returns[position_returns > 0])
             negative_positions = len(position_returns[position_returns < 0])
             data.append([total_pairs[index][0],
