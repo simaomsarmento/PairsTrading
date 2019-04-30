@@ -17,54 +17,45 @@ np.random.seed(107)
 
 if __name__ == "__main__":
 
-    config_path = sys.argv[1]
     # Read configuration file
+    config_path = sys.argv[1]
     with open(config_path, 'r') as f:
         config = json.load(f)
 
-    # 1. UPLOAD DATASET
+    # 1. UPLOAD DATA SET
+    # This code assumes the data preprocessing has been done previously by running the notebook:
+    # - PairsTrading_CommodityETFs-DataPreprocessing.ipynb
+    # Therefore, we simply retrieve the data from a pickle file and select the dates to study
+
     # initialize data processor
-    data_processor = class_DataProcessor.DataProcessor(path=config['dataset']['path'])
+    data_processor = class_DataProcessor.DataProcessor()
 
-    # get price series for tickers. First sees if df is already stored in pkl file
-    dataset_name = config['dataset']['path'].replace("data/etfs/", "").replace(".xlsx", "")
-    dataset_name = dataset_name + '_' + config['dataset']['training_initial_date'] + '_' + config['dataset']['testing_final_date']
-    try:
-        # try to retrieve from pickle if repeated file
-        df_prices = pd.read_pickle('data/etfs/pickle/'+dataset_name)
-    except:
-        # read from original data source and save in pickle file
-        _, df_tickers, tickers = data_processor.read_ticker_excel(
-            ticker_attribute=config['dataset']['ticker_attribute'])
-        # obtain prices
-        ticker_prices_dict = data_processor.read_tickers_prices(tickers=tickers,
-                                                       initial_date=config['dataset']['training_initial_date'],
-                                                       final_date=config['dataset']['testing_final_date'],
-                                                       data_source=config['dataset']['data_source']
-                                                       )
-        _, df_prices = data_processor.dict_to_df(ticker_prices_dict, config['dataset']['nan_threshold'])
-        # save in pickle file
-        df_prices.to_pickle('data/etfs/pickle/'+dataset_name)
+    # Read dataset and select dates
+    dataset_path = config['dataset']['path']
+    df_prices = pd.read_pickle(dataset_path)
 
-    # split data in training and validation
+    # split data in training and test
     df_prices_train, df_prices_test = data_processor.split_data(df_prices,
-                                                                config['dataset']['training_final_date'],
-                                                                config['dataset']['testing_initial_date'])
-
-    # get return series
-    df_returns_train = data_processor.get_return_series(df_prices_train)
+                                                                (config['dataset']['training_initial_date'],
+                                                                 config['dataset']['training_final_date']),
+                                                                (config['dataset']['testing_initial_date'],
+                                                                 config['dataset']['testing_final_date']),
+                                                                remove_nan=True)
 
     # 2. APPLY PCA and CLUSTERING
+    # get return series
+    df_returns_train = data_processor.get_return_series(df_prices_train)
+    # initialize series analyser
     series_analyser = class_SeriesAnalyser.SeriesAnalyser()
     try:
-        # validates list input
+        # validates list input from config file
         range_n_components = config['PCA']['N_COMPONENTS']
         X, clustered_series_all, clustered_series, counts, clf = \
             series_analyser.clustering_for_optimal_PCA(range_n_components[0], range_n_components[1],
                                                        df_returns_train, config['clustering'])
     except:
         # PCA
-        X, explained_variance = series_analyser.apply_PCA(config['PCA']['N_COMPONENTS'], df_returns_train)
+        X, _ = series_analyser.apply_PCA(config['PCA']['N_COMPONENTS'], df_returns_train)
         # Clustering
         clustered_series_all, clustered_series, counts, clf = \
             series_analyser.apply_DBSCAN(config['clustering']['epsilon'], config['clustering']['min_samples'],
@@ -82,8 +73,8 @@ if __name__ == "__main__":
                                                                 )
 
     # 4. APPLY TRADING STRATEGY
-    # we first apply the strategy to the training data, to further discard the pairs that were not
-    # profitable not even in the training period
+    # we first apply the strategy to the training data, to discard the pairs that were not
+    # profitable even in the training period
     trader = class_Trader.Trader()
 
     # obtain trading strategy
@@ -95,7 +86,7 @@ if __name__ == "__main__":
     else:
         trading_filter = None
 
-    # Run on TRAINING SET
+    # Run on TRAIN SET
     if 'bollinger' in trading_strategy:
         sharpe_results, cum_returns, performance = trader.apply_bollinger_strategy(pairs=pairs,
                                                                                    lookback_multiplier=config['trading']['lookback_multiplier'],
@@ -104,7 +95,6 @@ if __name__ == "__main__":
                                                                                    trading_filter=trading_filter,
                                                                                    test_mode=False
                                                                                    )
-
     elif 'kalman' in trading_strategy:
         sharpe_results, cum_returns, performance = trader.apply_kalman_strategy(pairs,
                                                                                 entry_multiplier=config['trading']['entry_multiplier'],
@@ -117,18 +107,16 @@ if __name__ == "__main__":
         exit()
 
     # get ROI for training
-    print('Train years ', round(len(df_prices_train) / 240))
-    train_metrics = trader.calculate_metrics(sharpe_results, cum_returns, round(len(df_prices_train)/240))
-
+    n_years_train = round(len(df_prices_train) / 240)
+    print('Train years ', n_years_train)
+    train_metrics = trader.calculate_metrics(sharpe_results, cum_returns, n_years_train)
 
     # filter pairs with positive results
-    sharpe_results = np.asarray(sharpe_results)
-    positive_pairs_indices = np.argwhere(sharpe_results > 0)
-    positive_pairs = [pairs[i] for i in positive_pairs_indices.flatten()]
+    profitable_pairs = trader.filter_profitable_pairs(sharpe_results=sharpe_results, pairs=pairs)
 
     # Run on TEST SET
     if 'bollinger' in trading_strategy:
-        sharpe_results, cum_returns, performance = trader.apply_bollinger_strategy(pairs=positive_pairs,
+        sharpe_results, cum_returns, performance = trader.apply_bollinger_strategy(pairs=profitable_pairs,
                                                                                    lookback_multiplier=config['trading']['lookback_multiplier'],
                                                                                    entry_multiplier=config['trading']['entry_multiplier'],
                                                                                    exit_multiplier=config['trading']['exit_multiplier'],
@@ -138,7 +126,7 @@ if __name__ == "__main__":
         print('Avg sharpe Ratio using Bollinger in test set: ', np.mean(sharpe_results))
 
     elif 'kalman' in trading_strategy:
-        sharpe_results, cum_returns, performance = trader.apply_kalman_strategy(positive_pairs,
+        sharpe_results, cum_returns, performance = trader.apply_kalman_strategy(profitable_pairs,
                                                                                 entry_multiplier=config['trading']['entry_multiplier'],
                                                                                 exit_multiplier=config['trading']['exit_multiplier'],
                                                                                 trading_filter=trading_filter,

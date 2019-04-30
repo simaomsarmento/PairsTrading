@@ -15,21 +15,16 @@ class DataProcessor:
     with some auxiliary functions
 
     """
-    def __init__(self, path):
-        """
-        :initial elements
-        """
-        self.path = path
 
-    def read_ticker_excel(self, ticker_attribute):
+    def read_ticker_excel(self, path=None):
         """
         Assumes the relevant tickers are saved in an excel file.
 
-        :param ticker_attribute: str corresponding to ticker column
+        :param path: path to excel
         :return: df with tickers data, list with tickers
         """
 
-        df = pd.read_excel(self.path)
+        df = pd.read_excel(path)
 
         # remove duplicated
         unique_df = df[~df.duplicated(subset=['Ticker'], keep='first')].sort_values(['Ticker'])
@@ -37,7 +32,7 @@ class DataProcessor:
 
         return df, unique_df, tickers
 
-    def read_tickers_prices(self, tickers, initial_date, final_date, data_source):
+    def read_tickers_prices(self, tickers, initial_date, final_date, data_source, column='Adj Close'):
         """
         This function reads the price series for the requested tickers
 
@@ -53,7 +48,7 @@ class DataProcessor:
         for ticker in tickers:
             try:
                 df = data.DataReader(ticker, data_source, initial_date, final_date)
-                series = df['Adj Close']
+                series = df[column]
                 series.name = ticker  # filter close price only
                 dataset[ticker] = series.copy()
             except:
@@ -64,7 +59,7 @@ class DataProcessor:
 
         return dataset
 
-    def dict_to_df(self, dataset, threshold):
+    def dict_to_df(self, dataset, threshold=None):
         """
         Transforms a dictionary into a Dataframe
 
@@ -83,7 +78,10 @@ class DataProcessor:
                 else:
                     df = pd.concat([df, dataset[k]], axis=1)
 
-        df_clean = self.remove_tickers_with_nan(df, threshold)
+        if threshold is not None:
+            df_clean = self.remove_tickers_with_nan(df, threshold)
+        else:
+            df_clean = df
 
         return df, df_clean
 
@@ -96,8 +94,6 @@ class DataProcessor:
 
         to_remove = list(null_values[null_values > threshold].index)
         df = df.drop(columns=to_remove)
-
-        print('From now on, we are only considering ' + str(df.shape[1]) + ' ETFs')
 
         return df
 
@@ -113,18 +109,29 @@ class DataProcessor:
 
         return df_returns
 
-    def split_data(self, df_prices, training_final_date, testing_initial_date):
+    def split_data(self, df_prices, training_dates, testing_dates, remove_nan=True):
         """
         This function splits a dataframe into training and validation sets
         :param df_prices: dataframe containing prices for all dates
-        :param training_final_date: final date for training set
-        :param testing_initial_date: initial date for test set
+        :param training_dates: tuple (training initial date, training final date)
+        :param testing_dates: tuple (testing initial date, testing final date)
+        :param remove_nan: flag to detect if nan values are to be removed
 
         :return: df with training prices
         :return: df with testing prices
         """
-        train_mask = (df_prices.index <= training_final_date)
-        test_mask = (df_prices.index >= testing_initial_date)
+        if remove_nan:
+            dataset_mask = ((df_prices.index >= training_dates[0]) &\
+                            (df_prices.index <= testing_dates[1]))
+            df_prices_dataset = df_prices[dataset_mask]
+            print('Total of {} tickers'.format(df_prices_dataset.shape[1]))
+            df_prices_dataset_without_nan = self.remove_tickers_with_nan(df_prices_dataset, 0)
+            print('Total of {} tickers after removing tickers with Nan values'.format(
+                df_prices_dataset_without_nan.shape[1]))
+            df_prices = df_prices_dataset_without_nan.copy()
+
+        train_mask = (df_prices.index <= training_dates[1])
+        test_mask = (df_prices.index >= testing_dates[0])
         df_prices_train = df_prices[train_mask]
         df_prices_test = df_prices[test_mask]
 

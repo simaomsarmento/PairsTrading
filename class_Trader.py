@@ -123,7 +123,7 @@ class Trader:
         : entry_multiplier : defines the multiple of std deviation used to enter a position
         : exit_multiplier: defines the multiple of std deviation used to exit a position
         """
-        print("Warning: don't forget lookback (halflife) must be at least 3.")
+        #print("Warning: don't forget lookback (halflife) must be at least 3.")
 
         entryZscore = entry_multiplier
         exitZscore = exit_multiplier
@@ -431,6 +431,8 @@ class Trader:
     def apply_bollinger_strategy(self, pairs, lookback_multiplier, entry_multiplier=2, exit_multiplier=0.5,
                                  trading_filter=None, test_mode = False):
         """
+        This function applies the bollinger strategy. We do not let the lookback extend further than 20 days,
+        as this would be too long of a period for the time ranges we are dealing with
 
         :param pairs: pairs to trade
         :param lookback_multiplier: half life multiplier to define lookback period
@@ -450,20 +452,21 @@ class Trader:
 
         for pair in pairs:
             #print('\n\n{},{}'.format(pair[0], pair[1]))
-            coint_result = pair[2]
-            lookback = lookback_multiplier * (coint_result['half_life'])
+            pair_info = pair[2]
+            lookback = min(lookback_multiplier * (pair_info['half_life']), 20)
             if trading_filter is not None:
-                trading_filter['lookback'] = trading_filter['filter_lookback_multiplier']*(coint_result['half_life'])
+                trading_filter['lookback'] = min(trading_filter['filter_lookback_multiplier']*(pair_info['half_life']),
+                                                 20)
 
-            if lookback >= len(coint_result['Y_train']):
+            if lookback >= len(pair_info['Y_train']):
                 print('Error: lookback is larger than length of the series')
 
             if test_mode:
-                y = coint_result['Y_test']
-                x = coint_result['X_test']
+                y = pair_info['Y_test']
+                x = pair_info['X_test']
             else:
-                y = coint_result['Y_train']
-                x = coint_result['X_train']
+                y = pair_info['Y_train']
+                x = pair_info['X_train']
             pnl, ret, summary, sharpe = self.bollinger_bands(Y=y,X=x,
                                                              lookback=lookback,
                                                              entry_multiplier=entry_multiplier,
@@ -475,11 +478,12 @@ class Trader:
 
         return sharpe_results, cum_returns, performance
 
-    def apply_kalman_strategy(self, pairs, entry_multiplier=2, exit_multiplier=0.5, trading_filter=None,
+    def apply_kalman_strategy(self, pairs, entry_multiplier=1, exit_multiplier=0, trading_filter=None,
                               test_mode=False):
         """
-        This function caals the kalman filter implementation for every pair.
+        This function calls the kalman filter implementation for every pair.
 
+        :param pairs: list with pairs identified in the training set information
         :param entry_multiplier: threshold that defines where to enter a position
         :param exit_multiplier: threshold that defines where to exit a position
         :param trading_filter:  trading_flter dictionary with parameters or None object in case of no filter
@@ -493,16 +497,17 @@ class Trader:
         performance = []  # aux variable to store pairs' record
         for pair in pairs:
             # print('\n\n{},{}'.format(pair[0], pair[1]))
-            coint_result = pair[2]
+            pair_info = pair[2]
             if trading_filter is not None:
-                trading_filter['lookback'] = trading_filter['filter_lookback_multiplier'] * (coint_result['half_life'])
+                trading_filter['lookback'] = min(trading_filter['filter_lookback_multiplier']*(pair_info['half_life']),
+                                                 20)
 
             if test_mode:
-                y = coint_result['Y_test']
-                x = coint_result['X_test']
+                y = pair_info['Y_test']
+                x = pair_info['X_test']
             else:
-                y = coint_result['Y_train']
-                x = coint_result['X_train']
+                y = pair_info['Y_train']
+                x = pair_info['X_train']
             pnl, ret, summary, sharpe = self.kalman_filter(y=y, x=x,
                                                            entry_multiplier=entry_multiplier,
                                                            exit_multiplier=exit_multiplier,
@@ -512,6 +517,21 @@ class Trader:
             performance.append((pair, summary))
 
         return sharpe_results, cum_returns, performance
+
+    def filter_profitable_pairs(self, sharpe_results, pairs):
+        """
+        This function discards pairs that were not profitable mantaining those for which a positive sharpe ratio was
+        obtained.
+        :param sharpe_results: list with sharpe resutls for every pair
+        :param pairs: list with all pairs and their info
+        :return: list with profitable pairs and their info
+        """
+
+        sharpe_results = np.asarray(sharpe_results)
+        profitable_pairs_indices = np.argwhere(sharpe_results > 0)
+        profitable_pairs = [pairs[i] for i in profitable_pairs_indices.flatten()]
+
+        return profitable_pairs
 
     def trade_summary(self, series):
         """
@@ -692,7 +712,7 @@ class Trader:
         :return: df with extra column providing return information for each position
         """
 
-        df['position_return'] = 0
+        df['position_return (%)'] = 0
         previous_unit = 0.
         position_ret_acc = 1.
         for index, row in df.iterrows():
@@ -760,6 +780,7 @@ class Trader:
             self.calculate_metrics(sharpe_results, cum_returns, n_years)
 
         sorted_indices = np.flip(np.argsort(sharpe_results), axis=0)
+
         # initialize list of lists
         data = []
         for index in sorted_indices:
