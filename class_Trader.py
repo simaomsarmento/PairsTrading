@@ -191,7 +191,7 @@ class Trader:
 
         n_years = round(len(Y) / 240) # approx of # of years, as each year does not have exactly 252 days
         time_in_market = 252. * n_years
-        apr = ((np.prod(1.+ret))**(time_in_market/len(ret)))-1
+        # apr = ((np.prod(1.+ret))**(time_in_market/len(ret)))-1
         if np.std(ret) == 0:
             sharpe = 0
         else:
@@ -201,9 +201,16 @@ class Trader:
 
         # get trade summary
         rolling_spread = Y - rolling_beta * X
+
         # All series contain Date as index
-        series_to_include = [(pnl, 'pnl'), (ret, 'ret'), (rolling_spread, 'spread'), (Y, Y.name), (X, X.name),
-                             (zscore, 'zscore'), (numUnits, 'numUnits')]
+        series_to_include = [(pnl, 'pnl'),
+                             (ret, 'ret'),
+                             (Y, Y.name),
+                             (X, X.name),
+                             (rolling_beta,'beta'),
+                             (rolling_spread, 'spread'),
+                             (zscore, 'zscore'),
+                             (numUnits, 'numUnits')]
         summary = self.trade_summary(series_to_include)
 
         return pnl, ret, summary, sharpe
@@ -408,7 +415,7 @@ class Trader:
                                                         )
 
         tmp1 = np.tile(np.matrix(numUnits).T, 2)
-        tmp2 = np.hstack((-1*beta[0, :].T,np.ones((len(y),1))))
+        tmp2 = np.hstack((-1*beta[0, :].T, np.ones((len(y),1))))
         positions = np.array(tmp1)*np.array(tmp2)*y2
 
         positions = pd.DataFrame(positions)
@@ -423,19 +430,18 @@ class Trader:
 
         n_years = round(len(y)/240)
         time_in_market = 252.*n_years
-        apr = ((np.prod(1.+ret))**(time_in_market/len(ret)))-1
+        # apr = ((np.prod(1.+ret))**(time_in_market/len(ret)))-1
         if np.std(ret) == 0:
             sharpe = 0
         else:
             sharpe = np.sqrt(time_in_market) * np.mean(ret) / np.std(ret)
-        #print('APR', apr)
-        #print('Sharpe', sharpe)
 
         # get summary df
         # No series should have Date as index
         series_to_include = [(pd.Series(pnl), 'pnl'), (ret.reset_index(drop=True), 'ret'),
                              (y_series.reset_index(drop=True), y_series.name),
                              (x_series.reset_index(), x_series.name),
+                             (pd.Series(np.squeeze(np.asarray(beta[0, :]))), 'beta'),
                              (pd.Series(e), 'e'), (pd.Series(np.sqrt(Q)), 'sqrt(Q)'),
                              (numUnits.reset_index(drop=True), 'numUnits')]
         summary = self.trade_summary(series_to_include)
@@ -570,7 +576,8 @@ class Trader:
         # instead of corresponding to the next position
         summary['numUnits'] = summary['numUnits'].shift().fillna(0)
         summary = summary.rename(columns={"numUnits": "current_position"})
-        if 'Date' in summary.columns:
+        if 'index' in summary.columns:
+            summary = summary.rename(columns={"index": "Date"})
             summary = summary.set_index('Date')
 
         return summary
@@ -818,16 +825,16 @@ class Trader:
         pairs_df = pd.DataFrame(data, columns=['Leg1', 'Leg2', 't_statistic', 'p_value', 'zero_cross', 'half_life',
                                                'hurst_exponent', 'positive_trades', 'negative_trades', 'sharpe_result'])
 
-        pairs_df['negative_trades_per_pair_pct'] = (pairs_df['negative_trades']) /\
+        pairs_df['positive_trades_per_pair_pct'] = (pairs_df['positive_trades']) /\
                                                    (pairs_df['positive_trades']+pairs_df['negative_trades'])*100
-        avg_negative_trades_per_pair_pct = pairs_df['negative_trades_per_pair_pct'].mean()
+        avg_positive_trades_per_pair_pct = pairs_df['positive_trades_per_pair_pct'].mean()
 
         results = {'n_pairs': len(sharpe_results),
                    'avg_sharpe_ratio': avg_sharpe_ratio,
                    'avg_total_roi': avg_total_roi,
                    'avg_annual_roi': avg_annual_roi,
-                   'pct_negative_trades_per_pair': avg_negative_trades_per_pair_pct,
-                   'pct_pairs_with_negative_results': 100 - positive_pct,
+                   'pct_positive_trades_per_pair': avg_positive_trades_per_pair_pct,
+                   'pct_pairs_with_positive_results': positive_pct,
                    'avg_half_life': pairs_df['half_life'].mean(),
                    'avg_hurst_exponent': pairs_df['hurst_exponent'].mean()}
 

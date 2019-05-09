@@ -265,8 +265,8 @@ class DataProcessor:
                    'avg_sharpe_ratio': [results["avg_sharpe_ratio"]],
                    'avg_total_roi': [results["avg_total_roi"]],
                    'avg_annual_roi': [results["avg_annual_roi"]],
-                   'pct_negative_trades_per_pair': [results["pct_negative_trades_per_pair"]],
-                   'pct_pairs_with_negative_results': [results["pct_pairs_with_negative_results"]],
+                   'pct_positive_trades_per_pair': [results["pct_positive_trades_per_pair"]],
+                   'pct_pairs_with_positive_results': [results["pct_pairs_with_positive_results"]],
                    'avg_half_life': [results["avg_half_life"]],
                    'avg_hurst_exponent': [results["avg_hurst_exponent"]]
                    }
@@ -283,7 +283,7 @@ class DataProcessor:
                 "exit_multiplier", "active", "filter_name", "filter_lookback_multiplier", "filter_lag",
                 "filter_diff_threshold", 'avg_sharpe_ratio_train', "avg_annual_roi_train", "n_pairs",
                 'avg_sharpe_ratio', 'avg_total_roi_train','avg_total_roi', 'avg_annual_roi',
-                'pct_negative_trades_per_pair', 'pct_pairs_with_negative_results','avg_half_life', 'avg_hurst_exponent']
+                'pct_positive_trades_per_pair', 'pct_pairs_with_positive_results','avg_half_life', 'avg_hurst_exponent']
         df = df[cols]
 
         self.append_df_to_excel(filename=filename, df=df)
