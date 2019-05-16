@@ -47,7 +47,7 @@ class SeriesAnalyser:
         # for some reason is not giving right results
         # t_statistic, p_value, crit_value = coint(X,Y, method='aeg')
 
-        # perform test manally in both directions
+        # perform test manually in both directions
         X = train_series[0]
         Y = train_series[1]
         pairs = [(X, Y), (Y, X)]
@@ -366,7 +366,7 @@ class SeriesAnalyser:
         return best_n_comp['X'], best_n_comp['clustered_series_all'], best_n_comp['clustered_series'], best_n_comp[
             'counts'], best_n_comp['clf']
 
-    def get_candidate_pairs(self, clustered_series, pricing_df_train, pricing_df_test, n_clusters, min_half_life=5,
+    def get_candidate_pairs(self, clustered_series, pricing_df_train, pricing_df_test, min_half_life=5,
                             min_zero_crosings=20, p_value_threshold=0.05, hurst_threshold=0.5):
         """
         This function looks for tradable pairs over the clusters formed previously.
@@ -385,6 +385,7 @@ class SeriesAnalyser:
         """
 
         total_pairs = []
+        n_clusters = len(clustered_series.value_counts())
         for clust in range(n_clusters):
             symbols = list(clustered_series[clustered_series == clust].index)
             cluster_pricing_train = pricing_df_train[symbols]

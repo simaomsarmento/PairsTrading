@@ -48,7 +48,6 @@ if __name__ == "__main__":
     if pairs_mode == 1:
         print('Running all against all.')
         clustered_series = pd.Series(0, index=df_prices_train.columns) # series with only one cluster
-        n_clusters = 1
     elif pairs_mode == 2:
         print('Running pairs by sectors (not yet implemented)')
         exit()
@@ -59,17 +58,16 @@ if __name__ == "__main__":
         try:
             # validates list input from config file
             range_n_components = config['PCA']['N_COMPONENTS']
-            X, clustered_series_all, clustered_series, counts, clf = \
+            X, _, clustered_series, _, clf = \
                 series_analyser.clustering_for_optimal_PCA(range_n_components[0], range_n_components[1],
                                                            df_returns_train, config['clustering'])
         except:
             # PCA
             X, _ = series_analyser.apply_PCA(config['PCA']['N_COMPONENTS'], df_returns_train)
             # Clustering
-            clustered_series_all, clustered_series, counts, clf = \
+            _, clustered_series, _, clf = \
                 series_analyser.apply_DBSCAN(config['clustering']['epsilon'], config['clustering']['min_samples'],
                                              X, df_returns_train)
-        n_clusters = len(counts)
 
     ###################################################################################################################
     # 3. Identify mean-reverting pairs
@@ -79,7 +77,6 @@ if __name__ == "__main__":
         series_analyser.get_candidate_pairs(clustered_series=clustered_series,
                                             pricing_df_train=df_prices_train,
                                             pricing_df_test=df_prices_test,
-                                            n_clusters=n_clusters,
                                             min_half_life=config['pair_restrictions']['min_half_life'],
                                             min_zero_crosings=config['pair_restrictions']['min_zero_crossings'],
                                             p_value_threshold=config['pair_restrictions']['p_value_threshold'],
