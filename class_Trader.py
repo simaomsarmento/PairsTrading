@@ -784,7 +784,7 @@ class Trader:
 
         return avg_sharpe_ratio, avg_total_roi, avg_annual_roi, positive_pct
 
-    def summarize_results(self, sharpe_results, cum_returns, performance, total_pairs):
+    def summarize_results(self, sharpe_results, cum_returns, performance, total_pairs, ticker_segment_dict):
         """
         This function summarizes interesting metrics to include in the final output
 
@@ -792,6 +792,7 @@ class Trader:
         :param cum_returns: array containing cum returns for each pair
         :param performance: df containing a summary of each pair's trade
         :param total_pairs: list containing all the identified pairs
+        :param ticker_segment_dict: dict containing segment for each ticker
 
         :return: dictionary with metrics of interest
         """
@@ -801,7 +802,7 @@ class Trader:
             self.calculate_metrics(sharpe_results, cum_returns, n_years)
 
         sorted_indices = np.flip(np.argsort(sharpe_results), axis=0)
-        print(sorted_indices)
+        #print(sorted_indices)
         # initialize list of lists
         data = []
         for index in sorted_indices:
@@ -810,7 +811,9 @@ class Trader:
             positive_positions = len(position_returns[position_returns > 0])
             negative_positions = len(position_returns[position_returns < 0])
             data.append([total_pairs[index][0],
+                         ticker_segment_dict[total_pairs[index][0]],
                          total_pairs[index][1],
+                         ticker_segment_dict[total_pairs[index][1]],
                          total_pairs[index][2]['t_statistic'],
                          total_pairs[index][2]['p_value'],
                          total_pairs[index][2]['zero_cross'],
@@ -822,8 +825,9 @@ class Trader:
                          ])
 
         # Create the pandas DataFrame
-        pairs_df = pd.DataFrame(data, columns=['Leg1', 'Leg2', 't_statistic', 'p_value', 'zero_cross', 'half_life',
-                                               'hurst_exponent', 'positive_trades', 'negative_trades', 'sharpe_result'])
+        pairs_df = pd.DataFrame(data, columns=['Leg1', 'Leg1_Segmt', 'Leg2', 'Leg2_Segmt', 't_statistic', 'p_value',
+                                               'zero_cross', 'half_life', 'hurst_exponent', 'positive_trades',
+                                               'negative_trades', 'sharpe_result'])
 
         pairs_df['positive_trades_per_pair_pct'] = (pairs_df['positive_trades']) /\
                                                    (pairs_df['positive_trades']+pairs_df['negative_trades'])*100

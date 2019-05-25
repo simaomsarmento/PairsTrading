@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import json
 import sys
+import pickle
 import class_SeriesAnalyser, class_Trader, class_DataProcessor
 
 # just set the seed for the random number generator
@@ -161,7 +162,11 @@ if __name__ == "__main__":
     # - writes global pairs results in an excel file
     # - stores dataframe with info regarding every pair in pickle file
     ###################################################################################################################
-    results, pairs_summary = trader.summarize_results(sharpe_results, cum_returns, performance, pairs)
+    with open(config['dataset']['ticker_segment_dict'], 'rb') as handle:
+        ticker_segment_dict = pickle.load(handle)
+
+    results, pairs_summary = trader.summarize_results(sharpe_results, cum_returns, performance, profitable_pairs,
+                                                      ticker_segment_dict)
 
     data_processor.dump_results(dataset=config['dataset'], pca=config['PCA'], clustering=config['clustering'],
                                 pair_restrictions=config['pair_restrictions'], trading=config['trading'],
