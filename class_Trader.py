@@ -179,7 +179,7 @@ class Trader:
         # P&L , Returns
         X_returns = (X - X.shift(periods=1))/X.shift(periods=1)
         Y_returns = (Y - Y.shift(periods=1))/Y.shift(periods=1)
-        pnl_X = X_positions.shift(periods=1)*X_returns
+        pnl_X = X_positions.shift(periods=1)*X_returns # beta * X *%return (beta included in X_positions)
         pnl_Y = Y_positions.shift(periods=1)*Y_returns
         pnl = pnl_X + pnl_Y
         pnl[0] = 0
