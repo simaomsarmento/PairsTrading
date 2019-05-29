@@ -177,7 +177,7 @@ class SeriesAnalyser:
         """
         Returns the nromalized time series assuming a normal distribution
         """
-        return (series - series.mean()) / np.std(series)
+        return class_Trader.py
 
     def calculate_half_life(self, z_array):
         """
