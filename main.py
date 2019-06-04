@@ -3,7 +3,7 @@ import numpy as np
 import json
 import sys
 import pickle
-import class_SeriesAnalyser, class_Trader, class_DataProcessor
+import class_SeriesAnalyser, class_Trader, class_DataProcessor, class_ForecastingTrader
 
 # just set the seed for the random number generator
 np.random.seed(107)
@@ -13,6 +13,7 @@ if __name__ == "__main__":
     # read inout parameters
     config_path = sys.argv[1]
     pairs_mode = int(sys.argv[2])
+    trade_mode = int(sys.argv[3]) # 1. Benchmark 2.ML 3.Both
     with open(config_path, 'r') as f:
         config = json.load(f)
 
@@ -39,9 +40,10 @@ if __name__ == "__main__":
                                                                 remove_nan=True)
 
     ###################################################################################################################
-    # 2. Pairs Filtering
-    # This section selects one of the three possible modes for filtering securities and returns the clusters on which to
-    # look for pairs
+    # 2. Pairs Filtering & Selection
+    # As this part is very visual, the pairs filtering and selection can be obtained by running the notebook:
+    # - 'PairsTrading_CommodityETFs-Clustering.ipynb'
+    # This section uploads the pairs for each scenario
     ###################################################################################################################
     # initialize series analyser
     series_analyser = class_SeriesAnalyser.SeriesAnalyser()
@@ -102,59 +104,73 @@ if __name__ == "__main__":
         trading_filter = None
 
     # ################################################ BENCHMARK #######################################################
-    # Run on TRAIN SET
-    if 'bollinger' in trading_strategy:
-        sharpe_results, cum_returns, performance = \
-            trader.apply_bollinger_strategy(pairs=pairs,
-                                            lookback_multiplier=config['trading']['lookback_multiplier'],
-                                            entry_multiplier=config['trading']['entry_multiplier'],
-                                            exit_multiplier=config['trading']['exit_multiplier'],
-                                            trading_filter=trading_filter,
-                                            test_mode=False
-                                            )
-    elif 'kalman' in trading_strategy:
-        sharpe_results, cum_returns, performance = \
-            trader.apply_kalman_strategy(pairs,
-                                         entry_multiplier=config['trading']['entry_multiplier'],
-                                         exit_multiplier=config['trading']['exit_multiplier'],
-                                         trading_filter=trading_filter,
-                                         test_mode=False
-                                         )
-    else:
-        print('Please insert valid trading strategy: 1. "bollinger" or 2."kalman"')
-        exit()
+    if (trade_mode == 1) or (trade_mode == 3):
+        # Run on TRAIN SET
+        if 'bollinger' in trading_strategy:
+            sharpe_results, cum_returns, performance = \
+                trader.apply_bollinger_strategy(pairs=pairs,
+                                                lookback_multiplier=config['trading']['lookback_multiplier'],
+                                                entry_multiplier=config['trading']['entry_multiplier'],
+                                                exit_multiplier=config['trading']['exit_multiplier'],
+                                                trading_filter=trading_filter,
+                                                test_mode=False
+                                                )
+        elif 'kalman' in trading_strategy:
+            sharpe_results, cum_returns, performance = \
+                trader.apply_kalman_strategy(pairs,
+                                             entry_multiplier=config['trading']['entry_multiplier'],
+                                             exit_multiplier=config['trading']['exit_multiplier'],
+                                             trading_filter=trading_filter,
+                                             test_mode=False
+                                             )
+        else:
+            print('Please insert valid trading strategy: 1. "bollinger" or 2."kalman"')
+            exit()
 
-    # get train metrics
-    n_years_train = round(len(df_prices_train) / 240)
-    train_metrics = trader.calculate_metrics(sharpe_results, cum_returns, n_years_train)
+        # get train metrics
+        n_years_train = round(len(df_prices_train) / 240)
+        train_metrics = trader.calculate_metrics(sharpe_results, cum_returns, n_years_train)
 
-    # filter pairs with positive results
-    profitable_pairs = trader.filter_profitable_pairs(sharpe_results=sharpe_results, pairs=pairs)
+        # filter pairs with positive results
+        profitable_pairs = trader.filter_profitable_pairs(sharpe_results=sharpe_results, pairs=pairs)
 
-    # Run on TEST SET
-    if 'bollinger' in trading_strategy:
-        sharpe_results, cum_returns, performance = \
-            trader.apply_bollinger_strategy(pairs=profitable_pairs,
-                                            lookback_multiplier=config['trading']['lookback_multiplier'],
-                                            entry_multiplier=config['trading']['entry_multiplier'],
-                                            exit_multiplier=config['trading']['exit_multiplier'],
-                                            trading_filter=trading_filter,
-                                            test_mode=True
-                                            )
-        print('Avg sharpe Ratio using Bollinger in test set: ', np.mean(sharpe_results))
+        # Run on TEST SET
+        if 'bollinger' in trading_strategy:
+            sharpe_results, cum_returns, performance = \
+                trader.apply_bollinger_strategy(pairs=profitable_pairs,
+                                                lookback_multiplier=config['trading']['lookback_multiplier'],
+                                                entry_multiplier=config['trading']['entry_multiplier'],
+                                                exit_multiplier=config['trading']['exit_multiplier'],
+                                                trading_filter=trading_filter,
+                                                test_mode=True
+                                                )
+            print('Avg sharpe Ratio using Bollinger in test set: ', np.mean(sharpe_results))
 
-    elif 'kalman' in trading_strategy:
-        sharpe_results, cum_returns, performance = \
-            trader.apply_kalman_strategy(pairs=profitable_pairs,
-                                         entry_multiplier=config['trading']['entry_multiplier'],
-                                         exit_multiplier=config['trading']['exit_multiplier'],
-                                         trading_filter=trading_filter,
-                                         test_mode=True
-                                         )
-        print('Avg sharpe Ratio using kalman in the test set: ', np.mean(sharpe_results))
+        elif 'kalman' in trading_strategy:
+            sharpe_results, cum_returns, performance = \
+                trader.apply_kalman_strategy(pairs=profitable_pairs,
+                                             entry_multiplier=config['trading']['entry_multiplier'],
+                                             exit_multiplier=config['trading']['exit_multiplier'],
+                                             trading_filter=trading_filter,
+                                             test_mode=True
+                                             )
+            print('Avg sharpe Ratio using kalman in the test set: ', np.mean(sharpe_results))
 
     # ################################################ ML BASED #######################################################
-    # TODO
+    if (trade_mode == 2) or (trade_mode == 3):
+
+        forecasting_trader = class_ForecastingTrader.ForecastingTrader()
+
+        # 1) get pairs spreads and train models
+        mlp_config = config['mlp']
+        mlp_config['train_val_split'] = int(config['mlp']['train_val_split']*len(pairs[0][2]['spread']))
+        models = forecasting_trader.train_models(pairs[:2], model_config=mlp_config) # CHANGE LIMITATION OF PAIRS
+
+        # 2) test models on training set and only keep profitable spreads
+        print('Still under construction')
+        exit()
+
+        # 3) test spreads on test set
 
     ###################################################################################################################
     # 5. Get results
