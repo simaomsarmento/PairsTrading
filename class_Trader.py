@@ -768,18 +768,20 @@ class Trader:
         :return: average annual roi
         :return: percentage of pairs with positive returns
         """
+        sharpe_results_filtered = [sharpe for sharpe in sharpe_results if sharpe != 0]
+        cum_returns_filtered = [cum for cum in cum_returns if cum != 0]
 
-        avg_sharpe_ratio = np.mean(sharpe_results)
+        avg_sharpe_ratio = np.mean(sharpe_results_filtered)
         print('Average result: ', avg_sharpe_ratio)
 
-        avg_total_roi = np.mean(cum_returns)
+        avg_total_roi = np.mean(cum_returns_filtered)
         print('avg_total_roi: ', avg_total_roi)
 
         avg_annual_roi = ((1 + (avg_total_roi / 100)) ** (1 / float(n_years)) - 1) * 100
         print('avg_annual_roi: ', avg_annual_roi)
 
-        sharpe_results = np.asarray(sharpe_results)
-        positive_pct = len(sharpe_results[sharpe_results > 0]) * 100 / len(sharpe_results)
+        sharpe_results_filtered = np.asarray(sharpe_results_filtered)
+        positive_pct = len(sharpe_results_filtered[sharpe_results_filtered > 0]) * 100 / len(sharpe_results_filtered)
         print('{} % of the pairs had positive returns'.format(positive_pct))
 
         return avg_sharpe_ratio, avg_total_roi, avg_annual_roi, positive_pct

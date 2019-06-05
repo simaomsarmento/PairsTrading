@@ -49,45 +49,17 @@ if __name__ == "__main__":
     series_analyser = class_SeriesAnalyser.SeriesAnalyser()
 
     if pairs_mode == 1:
-        print('Running all against all.')
-        clustered_series = pd.Series(0, index=df_prices_train.columns) # series with only one cluster
+        with open('data/etfs/pickle/pairs_unfiltered.pickle', 'rb') as handle:
+            pairs = pickle.load(handle)
     elif pairs_mode == 2:
-        print('Running pairs by sectors (not yet implemented)')
-        exit()
+        with open('data/etfs/pickle/pairs_category.pickle', 'rb') as handle:
+            pairs = pickle.load(handle)
     elif pairs_mode == 3:
-        print('Running pairs using PCA + unsupervised learning')
-        # get return series
-        df_returns_train = data_processor.get_return_series(df_prices_train)
-        try:
-            # validates list input from config file
-            range_n_components = config['PCA']['N_COMPONENTS']
-            X, _, clustered_series, _, clf = \
-                series_analyser.clustering_for_optimal_PCA(range_n_components[0], range_n_components[1],
-                                                           df_returns_train, config['clustering'])
-        except:
-            # PCA
-            X, _ = series_analyser.apply_PCA(config['PCA']['N_COMPONENTS'], df_returns_train)
-            # Clustering
-            _, clustered_series, _, clf = \
-                series_analyser.apply_DBSCAN(config['clustering']['epsilon'], config['clustering']['min_samples'],
-                                             X, df_returns_train)
+        with open('data/etfs/pickle/pairs_unsupervised_learning.pickle', 'rb') as handle:
+            pairs = pickle.load(handle)
 
     ###################################################################################################################
-    # 3. Identify mean-reverting pairs
-    # This section identifies the pairs which verify a set of conditions described in the configuration file.
-    ###################################################################################################################
-    pairs, unique_tickers = \
-        series_analyser.get_candidate_pairs(clustered_series=clustered_series,
-                                            pricing_df_train=df_prices_train,
-                                            pricing_df_test=df_prices_test,
-                                            min_half_life=config['pair_restrictions']['min_half_life'],
-                                            min_zero_crosings=config['pair_restrictions']['min_zero_crossings'],
-                                            p_value_threshold=config['pair_restrictions']['p_value_threshold'],
-                                            hurst_threshold=config['pair_restrictions']['hurst_threshold']
-                                            )
-
-    ###################################################################################################################
-    # 4. Apply trading
+    # 3. Apply trading
     # First apply the strategy to the training data, to discard the pairs that were not profitable not even in the
     # training period.
     # Secondly, apply the strategy on the test set
@@ -173,7 +145,7 @@ if __name__ == "__main__":
         # 3) test spreads on test set
 
     ###################################################################################################################
-    # 5. Get results
+    # 4. Get results
     # Obtain the results in the test set.
     # - writes global pairs results in an excel file
     # - stores dataframe with info regarding every pair in pickle file
