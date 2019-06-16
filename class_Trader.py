@@ -64,7 +64,6 @@ class Trader:
         the spread is only valid after 20 points, and the moving averages still need 20 points more
         to define its value.
         """
-
         # Calculate moving parameters
         # 1.beta:
         rolling_beta = self.rolling_regression(Y, X, window=lookback)
@@ -470,8 +469,11 @@ class Trader:
         cum_returns = []
         performance = []  # aux variable to store pairs' record
 
-        for pair in pairs:
-            #print('\n\n{},{}'.format(pair[0], pair[1]))
+        for i,pair in enumerate(pairs):
+            # start = time.time()
+            #end = time.time()
+            #print((end - start))
+            print('\n{}/{}'.format(i+1, len(pairs)))
             pair_info = pair[2]
             lookback = min(lookback_multiplier * (pair_info['half_life']), 20)
             if trading_filter is not None:
@@ -515,8 +517,11 @@ class Trader:
         sharpe_results = []
         cum_returns = []
         performance = []  # aux variable to store pairs' record
-        for pair in pairs:
-            # print('\n\n{},{}'.format(pair[0], pair[1]))
+        for i,pair in enumerate(pairs):
+            # start = time.time()
+            #end = time.time()
+            #print((end - start))
+            print('Pair: {}/{}'.format(i+1, len(pairs)))
             pair_info = pair[2]
             if trading_filter is not None:
                 trading_filter['lookback'] = min(trading_filter['filter_lookback_multiplier']*(pair_info['half_life']),
@@ -775,7 +780,7 @@ class Trader:
         print('Average result: ', avg_sharpe_ratio)
 
         avg_total_roi = np.mean(cum_returns_filtered)
-        print('avg_total_roi: ', avg_total_roi)
+        #print('avg_total_roi: ', avg_total_roi)
 
         avg_annual_roi = ((1 + (avg_total_roi / 100)) ** (1 / float(n_years)) - 1) * 100
         print('avg_annual_roi: ', avg_annual_roi)
@@ -786,7 +791,7 @@ class Trader:
 
         return avg_sharpe_ratio, avg_total_roi, avg_annual_roi, positive_pct
 
-    def summarize_results(self, sharpe_results, cum_returns, performance, total_pairs, ticker_segment_dict):
+    def summarize_results(self, sharpe_results, cum_returns, performance, total_pairs, ticker_segment_dict, n_years):
         """
         This function summarizes interesting metrics to include in the final output
 
@@ -799,7 +804,7 @@ class Trader:
         :return: dictionary with metrics of interest
         """
 
-        n_years = round(len(performance[0][1]) / 240)  # performance[0][1] contains time series index, thus true length
+        #n_years = round(len(performance[0][1]) / 240)  # performance[0][1] contains time series index, thus true length
         avg_sharpe_ratio, avg_total_roi, avg_annual_roi, positive_pct = \
             self.calculate_metrics(sharpe_results, cum_returns, n_years)
 

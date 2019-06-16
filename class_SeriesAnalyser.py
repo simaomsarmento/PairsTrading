@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import time
 
 import statsmodels.api as sm
 from statsmodels.tsa.stattools import coint, adfuller
@@ -23,14 +24,21 @@ class SeriesAnalyser:
         :initial elements
         """
 
-    def check_for_stationarity(self, X, cutoff=0.01):
+    def check_for_stationarity(self, X,  subsample=0):
         """
-        Receives as input a time series and a cutoff value.
         H_0 in adfuller is unit root exists (non-stationary).
         We must observe significant p-value to convince ourselves that the series is stationary.
-        """
 
-        result = adfuller(X)
+        :param X: time series
+        :param subsample: boolean indicating whether to subsample series
+        :return: adf results
+        """
+        if subsample != 0:
+            frequency = round(len(X)/subsample)
+            subsampled_X = X[0::frequency]
+            result = adfuller(subsampled_X)
+        else:
+            result = adfuller(X)
         # result contains:
         # 0: t-statistic
         # 1: p-value
@@ -38,7 +46,8 @@ class SeriesAnalyser:
 
         return {'t_statistic': result[0], 'p_value': result[1], 'critical_values': result[4]}
 
-    def check_for_cointegration(self, train_series, test_series):
+    def check_properties(self, train_series, test_series, p_value_threshold, min_half_life=5, min_zero_crossings=0,
+                         hurst_threshold=0.5):
         """
         Gets two time series as inputs and provides information concerning cointegration stasttics
         Y - b*X : Y is dependent, X is independent
@@ -54,41 +63,63 @@ class SeriesAnalyser:
         coint_stats = [0] * 2
 
         for i, pair in enumerate(pairs):
-            S1 = pair[0]
-            S2 = pair[1]
+            S1 = np.asarray(pair[0])
+            S2 = np.asarray(pair[1])
 
-            series_name = S1.name
-            S1 = sm.add_constant(S1)
+            #series_name = S1.name
+            S1_c = sm.add_constant(S1)
             # Y = bX + c
             # ols: (Y, X)
-            results = sm.OLS(S2, S1).fit()
-            S1 = S1[series_name]
-            b = results.params[S1.name]
+            results = sm.OLS(S2, S1_c).fit()
+            b = results.params[1]
 
-            spread = S2 - b * S1
-            stats = self.check_for_stationarity(pd.Series(spread, name='Spread'))
-            zero_cross = self.zero_crossings(spread)
-            hl = self.calculate_half_life(spread)
-            hurst_exponent = self.hurst(spread)
-            coint_stats[i] = {'t_statistic': stats['t_statistic'],
-                              'critical_val': stats['critical_values'],
-                              'p_value': stats['p_value'],
-                              'coint_coef': b,
-                              'zero_cross': zero_cross,
-                              'half_life': int(round(hl)),
-                              'hurst_exponent': hurst_exponent,
-                              'spread': spread,
-                              'Y_train': S2,
-                              'X_train': S1
-                              }
+            spread = pair[1] - b * pair[0] # as Pandas Series
+            spread_array = np.asarray(spread) # as array for faster computations
 
-        # select lowest t-statistic as representative test
-        if abs(coint_stats[0]['t_statistic']) > abs(coint_stats[1]['t_statistic']):
+            stats = self.check_for_stationarity(spread_array, subsample=2500)
+            if stats['p_value'] < p_value_threshold:  # verifies required pvalue
+
+                zero_cross = self.zero_crossings(spread_array)
+                if zero_cross >= min_zero_crossings:
+
+                    hl = self.calculate_half_life(spread_array)
+                    if hl >= min_half_life:
+
+                        hurst_exponent = self.hurst(spread_array)
+                        if hurst_exponent < hurst_threshold:
+
+                            coint_stats[i] = {'t_statistic': stats['t_statistic'],
+                                              'critical_val': stats['critical_values'],
+                                              'p_value': stats['p_value'],
+                                              'coint_coef': b,
+                                              'zero_cross': zero_cross,
+                                              'half_life': int(round(hl)),
+                                              'hurst_exponent': hurst_exponent,
+                                              'spread': spread,
+                                              'Y_train': pair[1],
+                                              'X_train': pair[0]
+                                              }
+
+        if coint_stats[0] == 0 and coint_stats[1] == 0:
+            coint_result = None
+            return coint_result
+
+        elif coint_stats[0] == 0:
+            coint_result = 1
+        elif coint_stats[1] == 0:
+            coint_result = 0
+        else: # both combinations are possible
+            # select lowest t-statistic as representative test
+            if abs(coint_stats[0]['t_statistic']) > abs(coint_stats[1]['t_statistic']):
+                coint_result = 0
+            else:
+                coint_result = 1
+
+        if coint_result == 0:
             coint_result = coint_stats[0]
             coint_result['X_test'] = test_series[0]
             coint_result['Y_test'] = test_series[1]
-
-        else:
+        elif coint_result == 1:
             coint_result = coint_stats[1]
             coint_result['X_test'] = test_series[1]
             coint_result['Y_test'] = test_series[0]
@@ -120,14 +151,10 @@ class SeriesAnalyser:
             for j in range(i + 1, n):
                 S1_train = data_train[keys[i]]; S2_train = data_train[keys[j]]
                 S1_test = data_test[keys[i]]; S2_test = data_test[keys[j]]
-                result = self.check_for_cointegration((S1_train, S2_train), (S1_test, S2_test))
-                pvalue = result['p_value']
-                if pvalue < p_value_threshold: # verifies required pvalue
-                    hl = self.calculate_half_life(result['spread'])
-                    if hl >= min_half_life: # verifies required half life
-                        if result['zero_cross'] >= min_zero_crossings: # verifies required zero crossings
-                            if result['hurst_exponent'] < hurst_threshold: # verifies hurst exponent
-                                pairs.append((keys[i], keys[j], result))
+                result = self.check_properties((S1_train, S2_train), (S1_test, S2_test), p_value_threshold,
+                                               min_half_life, min_zero_crossings, hurst_threshold)
+                if result is not None:
+                    pairs.append((keys[i], keys[j], result))
 
         return pairs
 
@@ -196,11 +223,6 @@ class SeriesAnalyser:
         res = model.fit()
 
         halflife = -np.log(2) / res.params[1]
-
-        # print(res.params)
-        # print('\nEstimated lambda:',res.params[1])
-        # print('Estimated miu:', res.params[0])
-        # print('Estimated half-life:', halflife)
 
         return halflife
 
@@ -387,6 +409,7 @@ class SeriesAnalyser:
         total_pairs = []
         n_clusters = len(clustered_series.value_counts())
         for clust in range(n_clusters):
+            print('Cluster {}/{}'.format(clust+1, n_clusters))
             symbols = list(clustered_series[clustered_series == clust].index)
             cluster_pricing_train = pricing_df_train[symbols]
             cluster_pricing_test = pricing_df_test[symbols]
