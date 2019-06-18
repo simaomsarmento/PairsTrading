@@ -283,7 +283,7 @@ class Trader:
         rolling_spread.name = 'spread'
         zScore.name = 'zscore'
         ret.name = 'ret'
-        numUnits = df['numUnits']; numUnits.name = 'current_position'
+        numUnits = df['numUnits']; numUnits.name = 'position_during_day'
         numUnits = numUnits.shift()
         summary = pd.concat([pnl, ret, X, Y, rolling_spread, zScore, numUnits], axis=1)
         summary.index = summary['Date']
@@ -396,6 +396,7 @@ class Trader:
         numUnitsShort = numUnitsShort.fillna(method='ffill')
 
         numUnits=numUnitsLong+numUnitsShort
+
         # apply trading filter
         if trading_filter is not None:
             if trading_filter['name'] == 'correlation':
@@ -413,19 +414,21 @@ class Trader:
                                                         units=numUnits
                                                         )
 
-        tmp1 = np.tile(np.matrix(numUnits).T, 2)
-        tmp2 = np.hstack((-1*beta[0, :].T, np.ones((len(y),1))))
-        positions = np.array(tmp1)*np.array(tmp2)*y2
-
-        positions = pd.DataFrame(positions)
-
-        tmp1 = np.array(positions.shift(1))
-        tmp2 = np.array(y2-y2.shift(1))
-        tmp3 = np.array(y2.shift(1))
-        pnl = np.sum(tmp1 * tmp2 / tmp3,axis=1)
-        ret = pnl / np.sum(np.abs(positions.shift(1)),axis=1)
-        ret = ret.fillna(0)
+        #tmp1 = np.tile(np.matrix(numUnits).T, 2)
+        #tmp2 = np.hstack((-1*beta[0, :].T, np.ones((len(y),1))))
+        #positions = np.array(tmp1)*np.array(tmp2)*y2
+        #positions = pd.DataFrame(positions)
+        #tmp1 = np.array(positions.shift(1))
+        #tmp2 = np.array(y2-y2.shift(1))
+        #tmp3 = np.array(y2.shift(1))
+        #pnl = np.sum(tmp1 * tmp2 / tmp3,axis=1)
+        #ret = pnl / np.sum(np.abs(positions.shift(1)),axis=1)
+        #ret = ret.fillna(0)
         #ret = ret.dropna()
+
+        numUnits = pd.Series(data=numUnits.values, index=y_series.index)
+        beta = pd.Series(data=np.squeeze(np.asarray(beta[0, :])), index=y_series.index).fillna(0)
+        ret, _ = self.calculate_returns_adapted(y_series, x_series, beta, numUnits.shift(1).fillna(0))
 
         n_years = round(len(y)/240)
         time_in_market = 252.*n_years
@@ -435,17 +438,18 @@ class Trader:
         else:
             sharpe = np.sqrt(time_in_market) * np.mean(ret) / np.std(ret)
 
-        # get summary df
-        # No series should have Date as index
-        series_to_include = [(pd.Series(pnl), 'pnl'), (ret.reset_index(drop=True), 'ret'),
-                             (y_series.reset_index(drop=True), y_series.name),
-                             (x_series.reset_index(), x_series.name),
-                             (pd.Series(np.squeeze(np.asarray(beta[0, :]))), 'beta'),
-                             (pd.Series(e), 'e'), (pd.Series(np.sqrt(Q)), 'sqrt(Q)'),
-                             (numUnits.reset_index(drop=True), 'numUnits')]
+        # add transaction costs and gather all info in df
+        series_to_include = [(ret, 'ret'),
+                             (y_series, y_series.name),
+                             (x_series, x_series.name),
+                             (beta, 'beta'),
+                             (pd.Series(e, index=y_series.index), 'e'),
+                             (pd.Series(np.sqrt(Q), index=y_series.index), 'sqrt(Q)'),
+                             (numUnits, 'numUnits')]
+
         summary = self.trade_summary(series_to_include)
 
-        return pnl, ret, summary, sharpe
+        return summary, sharpe
 
     def apply_bollinger_strategy(self, pairs, lookback_multiplier, entry_multiplier=2, exit_multiplier=0.5,
                                  trading_filter=None, test_mode = False):
@@ -516,6 +520,8 @@ class Trader:
         """
         sharpe_results = []
         cum_returns = []
+        sharpe_results_with_costs = []
+        cum_returns_with_costs = []
         performance = []  # aux variable to store pairs' record
         for i,pair in enumerate(pairs):
             # start = time.time()
@@ -533,15 +539,19 @@ class Trader:
             else:
                 y = pair_info['Y_train']
                 x = pair_info['X_train']
-            pnl, ret, summary, sharpe = self.kalman_filter(y=y, x=x,
-                                                           entry_multiplier=entry_multiplier,
-                                                           exit_multiplier=exit_multiplier,
-                                                           trading_filter=trading_filter)
-            cum_returns.append((np.cumprod(1 + ret) - 1).iloc[-1] * 100)
+            summary, sharpe = self.kalman_filter(y=y, x=x,
+                                                   entry_multiplier=entry_multiplier,
+                                                   exit_multiplier=exit_multiplier,
+                                                   trading_filter=trading_filter)
+            # no costs
+            cum_returns.append((np.cumprod(1 + summary.position_return) - 1).iloc[-1] * 100)
             sharpe_results.append(sharpe)
+            # with costs
+            cum_returns_with_costs.append((np.cumprod(1 + summary.position_ret_with_costs) - 1).iloc[-1] * 100)
+            sharpe_results_with_costs = None
             performance.append((pair, summary))
 
-        return sharpe_results, cum_returns, performance
+        return (sharpe_results, cum_returns), (sharpe_results_with_costs, cum_returns_with_costs), performance
 
     def filter_profitable_pairs(self, sharpe_results, pairs):
         """
@@ -580,10 +590,10 @@ class Trader:
         # change numUnits so that it corresponds to the position for the row's date,
         # instead of corresponding to the next position
         summary['numUnits'] = summary['numUnits'].shift().fillna(0)
-        summary = summary.rename(columns={"numUnits": "current_position"})
-        if 'index' in summary.columns:
-            summary = summary.rename(columns={"index": "Date"})
-            summary = summary.set_index('Date')
+        summary = summary.rename(columns={"numUnits": "position_during_day"})
+
+        # add position costs
+        summary['position_ret_with_costs'] = self.add_transaction_costs(summary)
 
         return summary
 
@@ -738,27 +748,71 @@ class Trader:
         :return: df with extra column providing return information for each position
         """
 
-        df['position_return_(%)'] = 0
+        df['position_return'] = 0
+        df['trade_duration'] = 0
         previous_unit = 0.
         position_ret_acc = 1.
+        new_position_counter = 0
+        day = df.index[0].day
         for index, row in df.iterrows():
             if previous_unit == row['numUnits']:
                 if previous_unit != 0.:
                     position_ret_acc = position_ret_acc * (1+row['ret'])
+                    # update counter
+                    if index.day != day:
+                        new_position_counter += 1
+                        day = index.day
                 continue  # no change in positions to verify
             else:
                 if previous_unit == 0.:
                     previous_unit = row['numUnits']
+                    # begin counter
+                    new_position_counter = 0
+                    day = index.day
                     continue  # simply start the trade
                 else:
+                    # update counter
+                    if index.day != day:
+                        new_position_counter += 1
                     # update position returns
                     position_ret_acc = position_ret_acc * (1+row['ret'])
                     df.loc[index, 'position_return'] = (position_ret_acc-1)
+                    df.loc[index, 'trade_duration'] = new_position_counter
                     position_ret_acc = 1.
                     previous_unit = row['numUnits']
+                    # begin counter
+                    new_position_counter = 0
+                    day = index.day
                     continue
 
         return df
+
+    def add_transaction_costs(self, summary, comission_costs=0.08, market_impact=0.2, short_rental=1):
+        """
+        Function to add transaction costs.
+
+        :param summary: dataframe containing summary of all transactions
+        :param comission_costs: commision costs, in percentage, per security, per trade
+        :param market_impact: market impact costs, in percentage, per security, per trade
+        :param short_rental: short rental costs, in annual percentage
+        :return: series with returns after costs
+        """
+        fixed_costs_per_trade = (comission_costs*2 + market_impact*2)/100 # remove percentage
+        short_costs_per_day = (short_rental / 252) / 100  # remove percentage
+
+        costs = summary.apply(lambda row: self.apply_costs(row, fixed_costs_per_trade, short_costs_per_day), axis=1)
+
+        ret_with_costs = summary['position_return']-costs
+
+        return ret_with_costs
+
+    def apply_costs(self, row, fixed_costs_per_trade, short_costs_per_day):
+        if row['position_during_day'] == 1. and row['trade_duration']!= 0:
+            return fixed_costs_per_trade + short_costs_per_day * row['trade_duration']
+        elif row['position_during_day'] == -1. and row['trade_duration']!= 0:
+            return fixed_costs_per_trade + short_costs_per_day * row['trade_duration']*(1/row['beta'])
+        else:
+            return 0
 
     def calculate_returns_adapted(self, y, x, beta, positions):
         """
@@ -770,7 +824,11 @@ class Trader:
         y_returns = y.pct_change().fillna(0)
         x_returns = x.pct_change().fillna(0)
 
-        returns = ((1 / beta.shift(1)) * y_returns - 1 * x_returns) * positions
+        if beta.mean() > 1:
+            returns = (((1 / beta.shift(1)) * y_returns - 1 * x_returns) * positions).fillna(0)
+        else:
+            returns = ((y_returns - beta * x_returns) * positions).fillna(0)
+
         cum_returns = np.cumprod(returns + 1) - 1
 
         return returns, cum_returns
@@ -829,7 +887,7 @@ class Trader:
         data = []
         for index in sorted_indices:
             # get number of positive and negative positions
-            position_returns = performance[index][1]['position_return_(%)']
+            position_returns = performance[index][1]['position_return']
             positive_positions = len(position_returns[position_returns > 0])
             negative_positions = len(position_returns[position_returns < 0])
             data.append([total_pairs[index][0],
