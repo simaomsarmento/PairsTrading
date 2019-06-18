@@ -47,7 +47,7 @@ class SeriesAnalyser:
         return {'t_statistic': result[0], 'p_value': result[1], 'critical_values': result[4]}
 
     def check_properties(self, train_series, test_series, p_value_threshold, min_half_life=5, min_zero_crossings=0,
-                         hurst_threshold=0.5):
+                         hurst_threshold=0.5, subsample=0):
         """
         Gets two time series as inputs and provides information concerning cointegration stasttics
         Y - b*X : Y is dependent, X is independent
@@ -76,7 +76,7 @@ class SeriesAnalyser:
             spread = pair[1] - b * pair[0] # as Pandas Series
             spread_array = np.asarray(spread) # as array for faster computations
 
-            stats = self.check_for_stationarity(spread_array, subsample=2500)
+            stats = self.check_for_stationarity(spread_array, subsample=subsample)
             if stats['p_value'] < p_value_threshold:  # verifies required pvalue
 
                 zero_cross = self.zero_crossings(spread_array)
@@ -127,7 +127,7 @@ class SeriesAnalyser:
         return coint_result
 
     def find_pairs(self, data_train, data_test, p_value_threshold, min_half_life=5, min_zero_crossings=0,
-                   hurst_threshold=0.5):
+                   hurst_threshold=0.5, subsample=0):
         """
         This function receives a df with the different securities as columns, and aims to find tradable
         pairs within this world. There is a df containing the training data and another one containing test data
@@ -152,7 +152,7 @@ class SeriesAnalyser:
                 S1_train = data_train[keys[i]]; S2_train = data_train[keys[j]]
                 S1_test = data_test[keys[i]]; S2_test = data_test[keys[j]]
                 result = self.check_properties((S1_train, S2_train), (S1_test, S2_test), p_value_threshold,
-                                               min_half_life, min_zero_crossings, hurst_threshold)
+                                               min_half_life, min_zero_crossings, hurst_threshold, subsample)
                 if result is not None:
                     pairs.append((keys[i], keys[j], result))
 
@@ -389,7 +389,7 @@ class SeriesAnalyser:
             'counts'], best_n_comp['clf']
 
     def get_candidate_pairs(self, clustered_series, pricing_df_train, pricing_df_test, min_half_life=5,
-                            min_zero_crosings=20, p_value_threshold=0.05, hurst_threshold=0.5):
+                            min_zero_crosings=20, p_value_threshold=0.05, hurst_threshold=0.5, subsample=0):
         """
         This function looks for tradable pairs over the clusters formed previously.
 
@@ -418,7 +418,8 @@ class SeriesAnalyser:
                                     p_value_threshold,
                                     min_half_life,
                                     min_zero_crosings,
-                                    hurst_threshold)
+                                    hurst_threshold,
+                                    subsample)
             total_pairs.extend(pairs)
 
         print('Found {} pairs'.format(len(total_pairs)))

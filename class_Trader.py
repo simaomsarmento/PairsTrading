@@ -753,12 +753,27 @@ class Trader:
                 else:
                     # update position returns
                     position_ret_acc = position_ret_acc * (1+row['ret'])
-                    df.loc[index, 'position_return_(%)'] = (position_ret_acc-1)*100
+                    df.loc[index, 'position_return'] = (position_ret_acc-1)
                     position_ret_acc = 1.
                     previous_unit = row['numUnits']
                     continue
 
         return df
+
+    def calculate_returns_adapted(self, y, x, beta, positions):
+        """
+        Y: price of ETF Y
+        X: price of ETF X
+        beta: cointegration ratio
+        positions: array indicating when to take a position
+        """
+        y_returns = y.pct_change().fillna(0)
+        x_returns = x.pct_change().fillna(0)
+
+        returns = ((1 / beta.shift(1)) * y_returns - 1 * x_returns) * positions
+        cum_returns = np.cumprod(returns + 1) - 1
+
+        return returns, cum_returns
 
     def calculate_metrics(self, sharpe_results, cum_returns, n_years):
         """
