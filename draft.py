@@ -212,7 +212,7 @@ def linear_strategy(self, Y, X, lookback):
 
     return pnl, total_pnl, ret
 
-def apply_bollinger_strategy(self, pairs, lookback_multiplier, entry_multiplier=2, exit_multiplier=0.5,
+def apply_bollinger_strategy(self, pairs, lookback, entry_multiplier=2, exit_multiplier=0.5,
                              trading_filter=None, test_mode = False):
     """
     This function applies the bollinger strategy. We do not let the lookback extend further than 20 days,
@@ -240,7 +240,7 @@ def apply_bollinger_strategy(self, pairs, lookback_multiplier, entry_multiplier=
         #print((end - start))
         print('\n{}/{}'.format(i+1, len(pairs)))
         pair_info = pair[2]
-        lookback = min(lookback_multiplier * (pair_info['half_life']), 20)
+
         if trading_filter is not None:
             trading_filter['lookback'] = min(trading_filter['filter_lookback_multiplier']*(pair_info['half_life']),
                                              20)

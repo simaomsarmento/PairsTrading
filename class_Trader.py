@@ -81,6 +81,145 @@ class Trader:
 
         return zscore, rolling_beta
 
+    def threshold_strategy(self, y, x, beta, entry_level=1.0, exit_level=1.0, stabilizing_threshold=5,
+                           trading_filter=None, rebalance=False):
+        """
+        This function implements a threshold filter strategy with a fixed beta, found from cointegration test.
+
+        :param y:
+        :param x:
+        :param entry_multiplier:
+        :param exit_multiplier:
+        :param stabilizing_threshold:
+        :param trading_filter:
+        :return:
+        """
+
+        spread = y - beta*x
+        norm_spread = (spread - spread.mean())/np.std(spread)
+        norm_spread = np.asarray(norm_spread.values)
+
+        longs_entry = norm_spread < -entry_level
+        longs_exit = norm_spread > -exit_level
+        shorts_entry = norm_spread > entry_level
+        shorts_exit = norm_spread < exit_level
+
+        num_units_long = pd.Series([np.nan for i in range(len(y))])
+        num_units_short = pd.Series([np.nan for i in range(len(y))])
+        # initialize with zero
+        num_units_long[0]=0.
+        num_units_short[0]=0.
+        # remove trades while the spread is stabilizing
+        longs_entry[:stabilizing_threshold] = False
+        longs_exit[:stabilizing_threshold] = False
+        shorts_entry[:stabilizing_threshold] = False
+        shorts_exit[:stabilizing_threshold] = False
+
+        num_units_long[longs_entry]=1.
+        num_units_long[longs_exit]=0
+        num_units_long = num_units_long.fillna(method='ffill')
+
+        num_units_short[shorts_entry]=-1.
+        num_units_short[shorts_exit]=0
+        num_units_short = num_units_short.fillna(method='ffill')
+
+        num_units=num_units_long+num_units_short
+
+        num_units = pd.Series(data=num_units.values, index=y.index, name='numUnits')
+
+        # for consistency with returns function
+        beta_series = pd.Series(data=[beta] * len(y), index=y.index)
+
+        # position durations
+        trading_durations = self.add_trading_duration(pd.DataFrame(num_units, index=y.index))
+
+        if not rebalance:
+            position_ret, _, ret_summary = self.calculate_position_returns_no_rebalance(y, x, beta_series, num_units)
+        else:
+            print('WARNING: COSTS ARE NOT ADJUSTED FOR DAILY REBALANCING, THIS MUST BE REVISED')
+            ret, _ = self.calculate_returns_adapted(y, x, beta_series, num_units.shift(1).fillna(0))
+
+        pnl_summary = self.calculate_pnl(y, x, beta, num_units.shift(1).fillna(0), trading_durations)
+
+        # add transaction costs and gather all info in df
+        series_to_include = [(pnl_summary.pnl,'pnl'),
+                             (pnl_summary.pnl_y, 'pnl_y'),
+                             (pnl_summary.pnl_x, 'pnl_x'),
+                             (pnl_summary.account_balance, 'account_balance'),
+                             (pnl_summary.daily_return, 'daily_return'),
+                             (position_ret, 'position_return'),
+                             (y, y.name),
+                             (x, x.name),
+                             (beta_series, 'beta'),
+                             (pd.Series(norm_spread, index=y.index), 'norm_spread'),
+                             (num_units, 'numUnits'),
+                             (trading_durations, 'trading_duration')]
+
+        summary = self.trade_summary(series_to_include)
+
+        # calculate sharpe ratio
+        ret_w_costs = summary.daily_return
+        n_years = round(len(y)/(240*78))
+        n_days = 252
+        n_trades_per_day= 78
+        time_in_market = n_years*n_days*n_trades_per_day
+        # apr = ((np.prod(1.+ret_w_costs))**(time_in_market/len(ret_w_costs)))-1
+        if np.std(position_ret) == 0:
+            sharpe_no_costs, sharpe_w_costs = (0,0)
+        else:
+            sharpe_no_costs = np.sqrt(time_in_market) * np.mean(position_ret) / np.std(position_ret)
+            sharpe_w_costs = np.sqrt(time_in_market) * np.mean(ret_w_costs) / np.std(ret_w_costs)
+
+        return summary, (sharpe_no_costs, sharpe_w_costs), ret_summary
+
+    def apply_threshold_strategy(self, pairs, entry_multiplier=1, exit_multiplier=0, trading_filter=None,
+                                 test_mode=False, rebalance=False):
+        """
+        This function calls the kalman filter implementation for every pair.
+
+        :param pairs: list with pairs identified in the training set information
+        :param entry_multiplier: threshold that defines where to enter a position
+        :param exit_multiplier: threshold that defines where to exit a position
+        :param trading_filter:  trading_flter dictionary with parameters or None object in case of no filter
+        :param test_mode: flag to decide whether to apply strategy on the training set or in the test set
+
+        :return: sharpe ratio results
+        :return: cumulative returns
+        """
+        sharpe_results = []
+        cum_returns = []
+        sharpe_results_with_costs = []
+        cum_returns_with_costs = []
+        performance = []  # aux variable to store pairs' record
+        for i,pair in enumerate(pairs):
+            print('Pair: {}/{}'.format(i+1, len(pairs)))
+            pair_info = pair[2]
+            if trading_filter is not None:
+                trading_filter['lookback'] = min(trading_filter['filter_lookback_multiplier']*(pair_info['half_life']),
+                                                 20)
+
+            if test_mode:
+                y = pair_info['Y_test']
+                x = pair_info['X_test']
+            else:
+                y = pair_info['Y_train']
+                x = pair_info['X_train']
+            summary, sharpe, ret_summary = self.threshold_strategy(y=y, x=x, beta=pair_info['coint_coef'],
+                                                                   entry_level=entry_multiplier,
+                                                                   exit_level=exit_multiplier,
+                                                                   trading_filter=trading_filter,
+                                                                   rebalance=rebalance)
+            # no costs
+            cum_returns.append((np.cumprod(1 + summary.position_return) - 1).iloc[-1] * 100)
+            sharpe_results.append(sharpe[0])
+            # with costs
+            #cum_returns_with_costs.append((np.cumprod(1 + summary.daily_return) - 1).iloc[-1] * 100)
+            cum_returns_with_costs.append((summary.account_balance[-1]-1)*100)
+            sharpe_results_with_costs.append(sharpe[1])
+            performance.append((pair, summary, ret_summary))
+
+        return (sharpe_results, cum_returns), (sharpe_results_with_costs, cum_returns_with_costs), performance
+
     def kalman_filter(self, y, x, entry_multiplier=1.0, exit_multiplier=1.0, stabilizing_threshold=5,
                       trading_filter=None, rebalance=False):
         """
@@ -218,7 +357,7 @@ class Trader:
         numUnits = pd.Series(data=numUnits.values, index=y_series.index)
         beta = pd.Series(data=np.squeeze(np.asarray(beta[0, :])), index=y_series.index).fillna(0)
         if not rebalance:
-            ret, _ = self.calculate_position_returns_no_rebalance(y_series, x_series, beta, numUnits)
+            ret, _, ret_summary = self.calculate_position_returns_no_rebalance(y_series, x_series, beta, numUnits)
         else:
             print('WARNING: COSTS ARE NOT ADJUSTED FOR DAILY REBALANCING, THIS MUST BE REVISED')
             ret, _ = self.calculate_returns_adapted(y_series, x_series, beta, numUnits.shift(1).fillna(0))
@@ -235,15 +374,19 @@ class Trader:
         summary = self.trade_summary(series_to_include)
 
         # calculate sharpe ratio
-        n_years = round(len(y)/240)
-        time_in_market = 252.*n_years
-        # apr = ((np.prod(1.+ret))**(time_in_market/len(ret)))-1
+        ret_w_costs = summary.position_ret_with_costs
+        n_years = round(len(y)/(240*78))
+        n_days = 252
+        n_trades_per_day= 78
+        time_in_market = n_years*n_days*n_trades_per_day
+        # apr = ((np.prod(1.+ret_w_costs))**(time_in_market/len(ret_w_costs)))-1
         if np.std(ret) == 0:
-            sharpe = 0
+            sharpe_no_costs, sharpe_w_costs = (0,0)
         else:
-            sharpe = np.sqrt(time_in_market) * np.mean(ret) / np.std(ret)
+            sharpe_no_costs = np.sqrt(time_in_market) * np.mean(ret) / np.std(ret)
+            sharpe_w_costs = np.sqrt(time_in_market) * np.mean(ret_w_costs) / np.std(ret_w_costs)
 
-        return summary, sharpe
+        return summary, (sharpe_no_costs, sharpe_w_costs), ret_summary
 
     def apply_kalman_strategy(self, pairs, entry_multiplier=1, exit_multiplier=0, trading_filter=None,
                               test_mode=False, rebalance=False):
@@ -280,18 +423,18 @@ class Trader:
             else:
                 y = pair_info['Y_train']
                 x = pair_info['X_train']
-            summary, sharpe = self.kalman_filter(y=y, x=x,
+            summary, sharpe, ret_summary = self.kalman_filter(y=y, x=x,
                                                  entry_multiplier=entry_multiplier,
                                                  exit_multiplier=exit_multiplier,
                                                  trading_filter=trading_filter,
                                                  rebalance=rebalance)
             # no costs
             cum_returns.append((np.cumprod(1 + summary.position_return) - 1).iloc[-1] * 100)
-            sharpe_results.append(sharpe)
+            sharpe_results.append(sharpe[0])
             # with costs
             cum_returns_with_costs.append((np.cumprod(1 + summary.position_ret_with_costs) - 1).iloc[-1] * 100)
-            sharpe_results_with_costs = None
-            performance.append((pair, summary))
+            sharpe_results_with_costs.append(sharpe[1])
+            performance.append((pair, summary, ret_summary))
 
         return (sharpe_results, cum_returns), (sharpe_results_with_costs, cum_returns_with_costs), performance
 
@@ -326,16 +469,13 @@ class Trader:
 
         summary = pd.concat([item[0] for item in series], axis=1)
 
-        # add position returns
-        summary = self.add_position_returns(summary)
-
         # change numUnits so that it corresponds to the position for the row's date,
         # instead of corresponding to the next position
         summary['numUnits'] = summary['numUnits'].shift().fillna(0)
         summary = summary.rename(columns={"numUnits": "position_during_day"})
 
         # add position costs
-        summary['position_ret_with_costs'] = self.add_transaction_costs(summary)
+        # summary['position_ret_with_costs'] = self.add_transaction_costs(summary)
 
         return summary
 
@@ -481,7 +621,7 @@ class Trader:
 
         return df
 
-    def add_position_returns(self, df):
+    def add_trading_duration(self, df):
         """
         The following function adds a column containing the info concerning the last position
         returns
@@ -490,16 +630,13 @@ class Trader:
         :return: df with extra column providing return information for each position
         """
 
-        df['position_return'] = 0
-        df['trade_duration'] = 0
+        df['trading_days'] = 0
         previous_unit = 0.
-        position_ret_acc = 1.
         new_position_counter = 0
         day = df.index[0].day
         for index, row in df.iterrows():
             if previous_unit == row['numUnits']:
                 if previous_unit != 0.:
-                    position_ret_acc = position_ret_acc * (1+row['ret'])
                     # update counter
                     if index.day != day:
                         new_position_counter += 1
@@ -513,18 +650,14 @@ class Trader:
                     day = index.day
                     continue  # simply start the trade
                 else:
-                    # update position returns
-                    position_ret_acc = position_ret_acc * (1+row['ret'])
-                    df.loc[index, 'position_return'] = (position_ret_acc-1)
-                    df.loc[index, 'trade_duration'] = new_position_counter
-                    position_ret_acc = 1.
+                    df.loc[index, 'trading_days'] = new_position_counter
                     previous_unit = row['numUnits']
                     # begin counter
                     new_position_counter = 1
                     day = index.day
                     continue
 
-        return df
+        return df['trading_days']
 
     def add_transaction_costs(self, summary, comission_costs=0.08, market_impact=0.2, short_rental=1):
         """
@@ -546,12 +679,75 @@ class Trader:
         return ret_with_costs
 
     def apply_costs(self, row, fixed_costs_per_trade, short_costs_per_day):
-        if row['position_during_day'] == 1. and row['trade_duration']!= 0:
-            return fixed_costs_per_trade + short_costs_per_day * row['trade_duration']
-        elif row['position_during_day'] == -1. and row['trade_duration']!= 0:
-            return fixed_costs_per_trade + short_costs_per_day * row['trade_duration']*(1/row['beta'])
+        if row['position_during_day'] == 1. and row['trading_days']!= 0:
+            return fixed_costs_per_trade + short_costs_per_day * row['trading_days']
+        elif row['position_during_day'] == -1. and row['trading_days']!= 0:
+            return fixed_costs_per_trade + short_costs_per_day * row['trading_days']*(1/row['beta'])
         else:
             return 0
+
+    def calculate_pnl(self, y, x, beta, positions, trading_durations):
+        
+        y_returns = y.pct_change().fillna(0)
+        x_returns = x.pct_change().fillna(0)
+
+        if beta>1:
+            y_returns = ((1/beta) * y_returns) * positions
+            x_returns = (- 1 * x_returns) * positions
+        else:
+            y_returns = (y_returns) * positions
+            x_returns = (-beta * x_returns) * positions
+
+        leg_x = 1 # initial balance
+        leg_y = 1 # intial balance
+        pnl_y = [np.nan]*len(y)
+        pnl_x = [np.nan]*len(y)
+
+        # auxiliary series to indicate beginning and end of position
+        new_positions_idx = positions.diff()[positions.diff() != 0].index.values
+        end_positions_idx = trading_durations[trading_durations != 0].index.values
+        position_trigger = pd.Series([0]*len(y), index=y.index)
+        position_trigger[new_positions_idx] = 1.
+        position_trigger[end_positions_idx] = -1.
+
+        for i in range(len(y)):
+            if (i == 0) or (positions[i] == 0):
+                pnl_y[i] = 0
+                pnl_x[i] = 0
+            else:
+                # add costs
+                if position_trigger[i] == 1:
+                    # every new position invest initial 1$ + acc in X + acc in Y
+                    position_investment = (1+(leg_y-1)+(leg_x-1))
+                    # if new position, that most legs contain now the overall invested
+                    pnl_y[i] = y_returns[i] * position_investment
+                    pnl_x[i] = x_returns[i] * position_investment
+                    pnl_y[i] = pnl_y[i] - 0.0028 # add comission + bid ask spread
+                    pnl_x[i] = pnl_x[i] - 0.0028 # add comission + bid ask spread
+                    # update legs
+                    leg_y = position_investment + pnl_y[i]
+                    leg_x = position_investment + pnl_x[i]
+                else:
+                    # calculate trade pnl
+                    pnl_y[i] = y_returns[i] * leg_y
+                    pnl_x[i] = x_returns[i] * leg_x
+                    if position_trigger[i] == -1:
+                        pnl_y[i] = pnl_y[i] - trading_durations[i] * (0.01 / 252)  # add short costs
+                    # update accumulated balance
+                    leg_y = leg_y + pnl_y[i]
+                    leg_x = leg_x + pnl_x[i]
+        pnl = [pnl_y[i] + pnl_x[i] for i in range(len(y))]
+
+        # join everything in dataframe
+        balance = pd.Series(data=(np.cumsum(pnl)+1), index=y.index, name='account_balance')
+        daily_return = balance.pct_change().fillna(0); daily_return.name='daily_return'
+        pnl = pd.Series(data=pnl, index=y.index, name='pnl')
+        pnl_y = pd.Series(data=pnl_y, index=y.index, name='pnl_y')
+        pnl_x = pd.Series(data=pnl_x, index=y.index, name='pnl_x')
+        pnl_summary = pd.concat([balance, pnl, pnl_y, pnl_x, daily_return], axis=1)
+
+        return pnl_summary
+
 
     def calculate_position_returns_no_rebalance(self, y, x, beta, positions):
         """
@@ -595,8 +791,9 @@ class Trader:
         df = pd.concat([y, x, beta_position, positions.shift().fillna(0), y_entry, x_entry, end_position], axis=1)
         returns = df.apply(lambda row: self.return_per_position(row), axis=1).fillna(0)
         cum_returns = np.cumprod(returns + 1) - 1
+        df['ret'] = returns
 
-        return returns, cum_returns
+        return returns, cum_returns, df
 
     def return_per_position(self, row):
         if row['end_position'] != 0:
@@ -653,8 +850,12 @@ class Trader:
         :return: average annual roi
         :return: percentage of pairs with positive returns
         """
-        sharpe_results_filtered = [sharpe for sharpe in sharpe_results if sharpe != 0]
-        cum_returns_filtered = [cum for cum in cum_returns if cum != 0]
+        # use below for fully invested capital
+        #sharpe_results_filtered = [sharpe for sharpe in sharpe_results if sharpe != 0]
+        #cum_returns_filtered = [cum for cum in cum_returns if cum != 0]
+        # use below for commited capital
+        sharpe_results_filtered = sharpe_results
+        cum_returns_filtered = cum_returns
 
         avg_sharpe_ratio = np.mean(sharpe_results_filtered)
         print('Average result: ', avg_sharpe_ratio)
@@ -665,8 +866,8 @@ class Trader:
         avg_annual_roi = ((1 + (avg_total_roi / 100)) ** (1 / float(n_years)) - 1) * 100
         print('avg_annual_roi: ', avg_annual_roi)
 
-        sharpe_results_filtered = np.asarray(sharpe_results_filtered)
-        positive_pct = len(sharpe_results_filtered[sharpe_results_filtered > 0]) * 100 / len(sharpe_results_filtered)
+        cum_returns_filtered = np.asarray(cum_returns_filtered)
+        positive_pct = len(cum_returns_filtered[cum_returns_filtered > 0]) * 100 / len(cum_returns_filtered)
         print('{} % of the pairs had positive returns'.format(positive_pct))
 
         return avg_sharpe_ratio, avg_total_roi, avg_annual_roi, positive_pct
@@ -684,7 +885,6 @@ class Trader:
         :return: dictionary with metrics of interest
         """
 
-        #n_years = round(len(performance[0][1]) / 240)  # performance[0][1] contains time series index, thus true length
         avg_sharpe_ratio, avg_total_roi, avg_annual_roi, positive_pct = \
             self.calculate_metrics(sharpe_results, cum_returns, n_years)
 

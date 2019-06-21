@@ -1,0 +1,50 @@
+{
+    "dataset": {
+        "ticker_segment_dict": "data/etfs/pickle/ticker_segment_dict.pickle",
+        "ticker_attribute": "Ticker",
+        "training_initial_date": "01-01-2009",
+        "training_final_date": "31-12-2017",
+        "testing_initial_date": "01-01-2018",
+        "testing_final_date": "31-12-2018",
+        "nan_threshold": 0
+    },
+    "PCA": {
+        "N_COMPONENTS": 3,
+    },
+    "clustering": {
+        "algo": "DBSCAN",
+        "epsilon": 0.4,
+        "min_samples": 2
+    },
+    "pair_restrictions": {
+        "min_half_life": 5,
+        "min_zero_crossings": 120,
+        "p_value_threshold": 0.05,
+        "hurst_threshold": 0.5
+    },
+    "trading": {
+        "strategy": "kalman",
+        "lookback_multiplier": 2,
+        "entry_multiplier": 2,
+        "exit_multiplier": 0
+    },
+    "trading_filter": {
+        "active": 0,
+        "name": "correlation",
+        "filter_lookback_multiplier": 2,
+        "lag": 1,
+        "diff_threshold": 0
+    },
+    "mlp": {
+        "n_in": 5,
+        "n_out": 1,
+        "epochs": 200,
+        "hidden_nodes":5,
+        "loss_fct": "mse",
+        "optimizer": "adam",
+        "train_val_split": "2016-01-01"
+    },
+    "output": {
+        "filename": "summary/results.xlsx"
+    }
+}
