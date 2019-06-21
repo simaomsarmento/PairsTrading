@@ -695,7 +695,7 @@ class Trader:
             y_returns = ((1/beta) * y_returns) * positions
             x_returns = (- 1 * x_returns) * positions
         else:
-            y_returns = (y_returns) * positions
+            y_returns = y_returns * positions
             x_returns = (-beta * x_returns) * positions
 
         leg_x = 1 # initial balance
