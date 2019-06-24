@@ -134,7 +134,7 @@ class Trader:
         trading_durations = self.add_trading_duration(pd.DataFrame(num_units, index=y.index))
 
         if not rebalance:
-            position_ret, _, ret_summary = self.calculate_position_returns_no_rebalance(y, x, beta_series, num_units)
+            position_ret, _, ret_summary = self.calculate_position_returns(y, x, beta_series, num_units)
         else:
             print('WARNING: COSTS ARE NOT ADJUSTED FOR DAILY REBALANCING, THIS MUST BE REVISED')
             ret, _ = self.calculate_returns_adapted(y, x, beta_series, num_units.shift(1).fillna(0))
@@ -170,7 +170,7 @@ class Trader:
             sharpe_no_costs = np.sqrt(time_in_market) * np.mean(position_ret) / np.std(position_ret)
             sharpe_w_costs = np.sqrt(time_in_market) * np.mean(ret_w_costs) / np.std(ret_w_costs)
 
-        return summary, (sharpe_no_costs, sharpe_w_costs), ret_summary
+        return summary, (sharpe_no_costs, sharpe_w_costs), pnl_summary
 
     def apply_threshold_strategy(self, pairs, entry_multiplier=1, exit_multiplier=0, trading_filter=None,
                                  test_mode=False, rebalance=False):
@@ -204,7 +204,7 @@ class Trader:
             else:
                 y = pair_info['Y_train']
                 x = pair_info['X_train']
-            summary, sharpe, ret_summary = self.threshold_strategy(y=y, x=x, beta=pair_info['coint_coef'],
+            summary, sharpe, pnl_summary = self.threshold_strategy(y=y, x=x, beta=pair_info['coint_coef'],
                                                                    entry_level=entry_multiplier,
                                                                    exit_level=exit_multiplier,
                                                                    trading_filter=trading_filter,
@@ -216,7 +216,7 @@ class Trader:
             #cum_returns_with_costs.append((np.cumprod(1 + summary.daily_return) - 1).iloc[-1] * 100)
             cum_returns_with_costs.append((summary.account_balance[-1]-1)*100)
             sharpe_results_with_costs.append(sharpe[1])
-            performance.append((pair, summary, ret_summary))
+            performance.append((pair, summary, pnl_summary))
 
         return (sharpe_results, cum_returns), (sharpe_results_with_costs, cum_returns_with_costs), performance
 
@@ -357,7 +357,7 @@ class Trader:
         numUnits = pd.Series(data=numUnits.values, index=y_series.index)
         beta = pd.Series(data=np.squeeze(np.asarray(beta[0, :])), index=y_series.index).fillna(0)
         if not rebalance:
-            ret, _, ret_summary = self.calculate_position_returns_no_rebalance(y_series, x_series, beta, numUnits)
+            ret, _, ret_summary = self.calculate_position_returns(y_series, x_series, beta, numUnits)
         else:
             print('WARNING: COSTS ARE NOT ADJUSTED FOR DAILY REBALANCING, THIS MUST BE REVISED')
             ret, _ = self.calculate_returns_adapted(y_series, x_series, beta, numUnits.shift(1).fillna(0))
@@ -475,7 +475,8 @@ class Trader:
         summary = summary.rename(columns={"numUnits": "position_during_day"})
 
         # add position costs
-        # summary['position_ret_with_costs'] = self.add_transaction_costs(summary)
+        summary['position_ret_with_costs'] = self.add_transaction_costs(summary)
+        #summary = summary.drop('position_return', axis=1)
 
         return summary
 
@@ -669,7 +670,7 @@ class Trader:
         :param short_rental: short rental costs, in annual percentage
         :return: series with returns after costs
         """
-        fixed_costs_per_trade = (comission_costs*2 + market_impact*2)/100 # remove percentage
+        fixed_costs_per_trade = (comission_costs + market_impact)/100 # remove percentage
         short_costs_per_day = (short_rental / 252) / 100  # remove percentage
 
         costs = summary.apply(lambda row: self.apply_costs(row, fixed_costs_per_trade, short_costs_per_day), axis=1)
@@ -679,10 +680,22 @@ class Trader:
         return ret_with_costs
 
     def apply_costs(self, row, fixed_costs_per_trade, short_costs_per_day):
-        if row['position_during_day'] == 1. and row['trading_days']!= 0:
-            return fixed_costs_per_trade + short_costs_per_day * row['trading_days']
-        elif row['position_during_day'] == -1. and row['trading_days']!= 0:
-            return fixed_costs_per_trade + short_costs_per_day * row['trading_days']*(1/row['beta'])
+        beta = row['beta']
+        if row['position_during_day'] == 1. and row['trading_duration']!= 0:
+            if beta >= 1:
+                return fixed_costs_per_trade*(1/beta) + fixed_costs_per_trade + short_costs_per_day * \
+                       row['trading_duration']
+            elif beta < 1:
+                return fixed_costs_per_trade*beta + fixed_costs_per_trade + short_costs_per_day * \
+                       row['trading_duration']*beta
+
+        elif row['position_during_day'] == -1. and row['trading_duration']!= 0:
+            if beta >= 1:
+                return fixed_costs_per_trade *(1/beta) + fixed_costs_per_trade + short_costs_per_day * \
+                       row['trading_duration']*(1/beta)
+            elif beta < 1:
+                return fixed_costs_per_trade*beta + fixed_costs_per_trade + short_costs_per_day *\
+                       row['trading_duration']
         else:
             return 0
 
@@ -706,9 +719,14 @@ class Trader:
         # auxiliary series to indicate beginning and end of position
         new_positions_idx = positions.diff()[positions.diff() != 0].index.values
         end_positions_idx = trading_durations[trading_durations != 0].index.values
-        position_trigger = pd.Series([0]*len(y), index=y.index)
-        position_trigger[new_positions_idx] = 1.
-        position_trigger[end_positions_idx] = -1.
+        position_trigger = pd.Series([0]*len(y), index=y.index, name='position_trigger')
+        # 2: new position
+        # 1: new position which only lasts one day
+        # -1: end of position that did not start on that day
+        position_trigger[new_positions_idx] = 2.
+        position_trigger[end_positions_idx] = position_trigger[end_positions_idx]-1.
+        position_trigger = position_trigger*positions.abs()
+        position_trigger.name = 'position_trigger'
 
         for i in range(len(y)):
             if (i == 0) or (positions[i] == 0):
@@ -722,17 +740,58 @@ class Trader:
                     # if new position, that most legs contain now the overall invested
                     pnl_y[i] = y_returns[i] * position_investment
                     pnl_x[i] = x_returns[i] * position_investment
-                    pnl_y[i] = pnl_y[i] - 0.0028 # add comission + bid ask spread
-                    pnl_x[i] = pnl_x[i] - 0.0028 # add comission + bid ask spread
+                    # commission costs + market impact costs + short rental costs
+                    #if beta >= 1:
+                    #    pnl_y[i] = pnl_y[i] - 0.0028*(1/beta)*position_investment # add commission + bid ask spread
+                    #    pnl_x[i] = pnl_x[i] - 0.0028*position_investment # add commission + bid ask spread
+                    #    if positions[i] == 1:
+                    #        pnl_x[i] = pnl_x[i] - 1 * (0.01 / 252)*position_investment
+                    #    elif positions[i] == -1:
+                    #        pnl_y[i] = pnl_y[i] - 1 * (0.01 / 252)*(1/beta)*position_investment
+                    #elif beta < 1:
+                    #    pnl_y[i] = pnl_y[i] - 0.0028 * position_investment  # add commission + bid ask spread
+                    #    pnl_x[i] = pnl_x[i] - 0.0028 * beta * position_investment  # add commission + bid ask spread
+                    #    if positions[i]==1:
+                    #        pnl_x[i] = pnl_x[i] - 1 * (0.01 / 252)*beta*position_investment
+                    #    elif positions[i]==-1:
+                    #        pnl_y[i] = pnl_y[i] - 1 * (0.01 / 252)*position_investment
                     # update legs
                     leg_y = position_investment + pnl_y[i]
                     leg_x = position_investment + pnl_x[i]
+
+                elif position_trigger[i] == 2:
+                    # every new position invest initial 1$ + acc in X + acc in Y
+                    position_investment = (1+(leg_y-1)+(leg_x-1))
+                    # if new position, that most legs contain now the overall invested
+                    pnl_y[i] = y_returns[i] * position_investment
+                    pnl_x[i] = x_returns[i] * position_investment
+                    # commission costs + market impact costs + short rental costs
+                    #if beta >= 1:
+                    #    pnl_y[i] = pnl_y[i] - 0.0028*(1/beta)*position_investment # add commission + bid ask spread
+                    #    pnl_x[i] = pnl_x[i] - 0.0028*position_investment # add commission + bid ask spread
+                    #elif beta < 1:
+                    #    pnl_y[i] = pnl_y[i] - 0.0028 * position_investment  # add commission + bid ask spread
+                    #    pnl_x[i] = pnl_x[i] - 0.0028 * beta * position_investment  # add commission + bid ask spread
+                    # update legs
+                    leg_y = position_investment + pnl_y[i]
+                    leg_x = position_investment + pnl_x[i]
+
                 else:
                     # calculate trade pnl
                     pnl_y[i] = y_returns[i] * leg_y
                     pnl_x[i] = x_returns[i] * leg_x
-                    if position_trigger[i] == -1:
-                        pnl_y[i] = pnl_y[i] - trading_durations[i] * (0.01 / 252)  # add short costs
+                    #if position_trigger[i] == -1:
+                    #    if positions[i]==1:
+                    #        if beta > 1:
+                    #            pnl_x[i] = pnl_x[i] - trading_durations[i] * (0.01 / 252) * position_investment
+                    #        elif beta < 1:
+                    #            pnl_x[i] = pnl_x[i] - trading_durations[i] * (0.01 / 252)*beta*position_investment
+                    #    elif positions[i]==-1:
+                    #        if beta > 1:
+                    #            pnl_y[i] = pnl_y[i] - trading_durations[i] * (0.01 / 252)*(1/beta)*position_investment
+                    #        elif beta < 1:
+                    #            pnl_y[i] = pnl_y[i] - trading_durations[i] * (0.01 / 252) * position_investment
+
                     # update accumulated balance
                     leg_y = leg_y + pnl_y[i]
                     leg_x = leg_x + pnl_x[i]
@@ -744,12 +803,12 @@ class Trader:
         pnl = pd.Series(data=pnl, index=y.index, name='pnl')
         pnl_y = pd.Series(data=pnl_y, index=y.index, name='pnl_y')
         pnl_x = pd.Series(data=pnl_x, index=y.index, name='pnl_x')
-        pnl_summary = pd.concat([balance, pnl, pnl_y, pnl_x, daily_return], axis=1)
+        pnl_summary = pd.concat([balance, pnl, pnl_y, pnl_x, daily_return, position_trigger, positions, trading_durations], axis=1)
 
         return pnl_summary
 
 
-    def calculate_position_returns_no_rebalance(self, y, x, beta, positions):
+    def calculate_position_returns(self, y, x, beta, positions):
         """
         Y: price of ETF Y
         X: price of ETF X

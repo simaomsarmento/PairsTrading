@@ -298,3 +298,54 @@ def calculate_returns_no_rebalance(self, y, x, beta, positions):
 
     return returns, cum_returns
 
+
+# forecasting notebook
+
+
+def apply_ARIMA(series, p, d, q):
+    # fit model
+    model = ARIMA(series, order=(p,d,q))
+    model_fit = model.fit(disp=0)
+    print(model_fit.summary())
+    # plot residual errors
+    residuals = pd.DataFrame(model_fit.resid)
+    residuals.plot()
+    plt.show()
+    residuals.plot(kind='kde')
+    plt.show()
+    print(residuals.describe())
+
+def rolling_ARIMA(series, p, d, q, train_val_split):
+    # standardize
+    mean = series.mean()
+    std = np.std(series)
+    norm_series = (series - mean) / std
+
+    train, val = norm_series[:train_val_split].values, norm_series[train_val_split:].values
+    history = np.asarray([x for x in train])
+    predictions = list()
+    for t in range(len(val)):
+        model = ARIMA(history, order=(p, d, q))
+        model_fit = model.fit(transparams=False, trend='nc', tol=0.0001, disp=0)
+        if t == 0:
+            print(model_fit.summary())
+            print(history[-5:])
+        output = model_fit.forecast()
+        yhat = output[0]
+        predictions.append(yhat)
+        obs = val[t]
+        history = np.append(history, obs)
+        print('predicted=%f, expected=%f' % (yhat, obs))
+
+    # destandardize
+    val = val * std + mean
+    predictions = np.asarray(predictions);
+    predictions = predictions * std + mean
+    error = mean_squared_error(val, predictions)
+    print('Test MSE: {}'.format(error))
+    # plot
+    # plt.plot(val)
+    # plt.plot(predictions, color='red')
+    # plt.show()
+
+    return error, predictions
