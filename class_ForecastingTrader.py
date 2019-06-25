@@ -142,7 +142,7 @@ class ForecastingTrader:
 
             # train model and get predictions
             model = None # ensure new var is created
-            print('NUMBER OF EPOCHS: ', epochs)
+            print('NUMBER OF EPOCHS: ', model_config['epochs'])
             model, history, score, predictions = self.apply_MLP(X=train_data[0],
                                                                 y=train_data[1],
                                                                 validation_data=validation_data,
