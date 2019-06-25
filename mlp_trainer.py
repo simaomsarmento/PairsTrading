@@ -14,6 +14,7 @@ K.set_session(sess)
 
 import pandas as pd
 import pickle
+import gc
 
 forecasting_trader = class_ForecastingTrader.ForecastingTrader()
 data_processor = class_DataProcessor.DataProcessor()
@@ -52,3 +53,5 @@ for input_dim in n_in_set:
         # save models for this confguration
         with open('models_n_in-'+str(input_dim)+'_hidden_nodes-'+hidden_nodes_names[i]+'.pkl', 'wb') as f:
             pickle.dump(models, f)
+
+gc.collect()

@@ -159,7 +159,7 @@ class ForecastingTrader:
             # save all info
             model_info = {'leg1': pair[0],
                           'leg2': pair[1],
-                          'info': pair[2].copy(),
+                          #'info': pair[2].copy(),
                           'standardization_dict': standardization_dict,
                           #'model': model,
                           'history': history,
