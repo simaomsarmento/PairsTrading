@@ -162,9 +162,9 @@ class ForecastingTrader:
                           #'info': pair[2].copy(),
                           'standardization_dict': standardization_dict,
                           #'model': model,
-                          'history': history,
+                          #'history': history,
                           'score': score,
-                          'predictions': predictions_destandardized.copy(),
+                          #'predictions': predictions_destandardized.copy(),
                           }
 
             models.append(model_info)
