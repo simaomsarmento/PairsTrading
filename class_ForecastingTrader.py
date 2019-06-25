@@ -161,7 +161,7 @@ class ForecastingTrader:
                           'leg2': pair[1],
                           #'info': pair[2].copy(),
                           'standardization_dict': standardization_dict,
-                          #'model': model,
+                          'model': model,
                           #'history': history,
                           'score': score,
                           'predictions': predictions_destandardized.copy(),
