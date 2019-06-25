@@ -4,7 +4,6 @@ from openpyxl import load_workbook
 
 # Import Datetime and the Pandas DataReader
 from datetime import datetime
-from pandas_datareader import data, wb
 
 # just set the seed for the random number generator
 np.random.seed(107)
@@ -31,33 +30,6 @@ class DataProcessor:
         tickers = unique_df.Ticker.unique()
 
         return df, unique_df, tickers
-
-    def read_tickers_prices(self, tickers, initial_date, final_date, data_source, column='Adj Close'):
-        """
-        This function reads the price series for the requested tickers
-
-        :param tickers: list with tickers from which to retrieve prices
-        :param initial_date: start date to retrieve price series
-        :param final_date: end point
-        :param data_source: data source from where to retrieve data
-
-        :return: dictionary with price series for each ticker
-        """
-        error_counter = 0
-        dataset = {key: None for key in tickers}
-        for ticker in tickers:
-            try:
-                df = data.DataReader(ticker, data_source, initial_date, final_date)
-                series = df[column]
-                series.name = ticker  # filter close price only
-                dataset[ticker] = series.copy()
-            except:
-                error_counter = error_counter + 1
-                print('Not Possible to retrieve information for ' + ticker)
-
-        print('\nUnable to download ' + str(error_counter / len(tickers) * 100) + '% of the ETFs')
-
-        return dataset
 
     def dict_to_df(self, dataset, threshold=None):
         """
