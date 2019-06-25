@@ -164,7 +164,7 @@ class ForecastingTrader:
                           #'model': model,
                           #'history': history,
                           'score': score,
-                          #'predictions': predictions_destandardized.copy(),
+                          'predictions': predictions_destandardized.copy(),
                           }
 
             models.append(model_info)

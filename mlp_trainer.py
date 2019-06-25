@@ -51,7 +51,7 @@ for input_dim in n_in_set:
                         "train_val_split": '2017-01-01'}
         models = forecasting_trader.train_models(pairs, model_config)
         # save models for this confguration
-        with open('models_n_in-'+str(input_dim)+'_hidden_nodes-'+hidden_nodes_names[i]+'.pkl', 'wb') as f:
+        with open('../models/models_n_in-'+str(input_dim)+'_hidden_nodes-'+hidden_nodes_names[i]+'.pkl', 'wb') as f:
             pickle.dump(models, f)
 
 gc.collect()
