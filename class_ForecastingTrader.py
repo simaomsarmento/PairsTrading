@@ -141,7 +141,6 @@ class ForecastingTrader:
             train_data, validation_data, y_series_val, standardization_dict = self.prepare_data(spread, model_config)
 
             # train model and get predictions
-            model = None # ensure new var is created
             model, history, score, predictions = self.apply_MLP(X=train_data[0],
                                                                 y=train_data[1],
                                                                 validation_data=validation_data,
@@ -159,15 +158,20 @@ class ForecastingTrader:
             # save all info
             model_info = {'leg1': pair[0],
                           'leg2': pair[1],
-                          #'info': pair[2].copy(),
                           'standardization_dict': standardization_dict,
-                          'model': model,
-                          #'history': history,
+                          'history': history.history,
                           'score': score,
                           'predictions': predictions_destandardized.copy(),
                           }
-
             models.append(model_info)
+
+            # save keras model
+            nodes = model_config['hidden_nodes']
+            nodes_name = str(nodes[0]) + '*2_' if len(nodes) > 1 else str(nodes[0])
+            model.save('../models/keras_models/models_n_in-'+str(model_config['n_in'])+'_hidden_nodes-'+nodes_name+
+                       '_{}_{}_'.format(pair[0], pair[1])+'.h5')  # creates a HDF5 file 'my_model.h5'
+            del model  # deletes the existing model
+
 
         # append model configuration on last position
         models.append(model_config)
