@@ -20,7 +20,7 @@ forecasting_trader = class_ForecastingTrader.ForecastingTrader()
 
 ################################# READ PRICES AND PAIRS #################################
 # read prices
-df_prices = pd.read_pickle('../data/etfs/pickle/commodity_ETFs_intraday_interpolated_screened_no_outliers')
+df_prices = pd.read_pickle('../data/etfs/pickle/commodity_ETFs_intraday_interpolated_screened_no_outliers.pkl')
 # split data in training and test
 df_prices_train, df_prices_test = data_processor.split_data(df_prices,
                                                             ('01-01-2009',
