@@ -1,4 +1,5 @@
 import class_ForecastingTrader
+import class_DataProcessor
 import numpy as np
 np.random.seed(1) # NumPy
 import random
@@ -17,10 +18,11 @@ import time
 import sys
 
 forecasting_trader = class_ForecastingTrader.ForecastingTrader()
+data_processor = class_DataProcessor.DataProcessor()
 
 ################################# READ PRICES AND PAIRS #################################
 # read prices
-df_prices = pd.read_pickle('../data/etfs/pickle/commodity_ETFs_intraday_interpolated_screened_no_outliers.pickle')
+df_prices = pd.read_pickle('data/etfs/pickle/commodity_ETFs_intraday_interpolated_screened_no_outliers.pickle')
 # split data in training and test
 df_prices_train, df_prices_test = data_processor.split_data(df_prices,
                                                             ('01-01-2009',
