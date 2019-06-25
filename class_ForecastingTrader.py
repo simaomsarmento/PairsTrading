@@ -169,7 +169,7 @@ class ForecastingTrader:
             nodes = model_config['hidden_nodes']
             nodes_name = str(nodes[0]) + '*2_' if len(nodes) > 1 else str(nodes[0])
             model.save('../models/keras_models/models_n_in-'+str(model_config['n_in'])+'_hidden_nodes-'+nodes_name+
-                       '_{}_{}_'.format(pair[0], pair[1])+'.h5')  # creates a HDF5 file 'my_model.h5'
+                       '_{}_{}'.format(pair[0], pair[1])+'.h5')  # creates a HDF5 file 'my_model.h5'
             del model  # deletes the existing model
 
 
