@@ -117,17 +117,18 @@ class ForecastingTrader:
             tuple with validation data
             y_series in validation period (to compare with predictions later on)
         """
+        train_val_split = model_config['train_val_split']
+
         # save data form original spread
-        standardization_dict = {'mean': spread.mean(), 'std': np.std(spread)}
-        spread = (spread - spread.mean()) / np.std(spread)
+        standardization_dict = {'mean': spread[:train_val_split].mean(), 'std': np.std(spread[:train_val_split])}
+        spread = (spread - standardization_dict['mean']) / standardization_dict['std']
         forecasting_data = self.series_to_supervised(list(spread), spread.index, model_config['n_in'],
                                                      model_config['n_out'], dropnan=True)
         # define dataset
-        X_series = forecasting_data.drop(columns='var1(t)');
+        X_series = forecasting_data.drop(columns='var1(t)')
         y_series = forecasting_data['var1(t)']
 
         # split
-        train_val_split = model_config['train_val_split']
         X_series_train = X_series[:train_val_split]
         X_series_val = X_series[train_val_split:]
         y_series_train = y_series[:train_val_split]
@@ -140,6 +141,12 @@ class ForecastingTrader:
 
         return (X_train, y_train), (X_val, y_val), y_series_val, standardization_dict
 
+    def destandardize(self, predictions, spread_mean, spread_std):
+        """
+        This function transforms the normalized predictions into the original space.
+        """
+        return predictions * spread_std + spread_mean
+
     def train_models(self, pairs, model_config):
         """
         This function trains the models for every pair identified.
@@ -148,8 +155,6 @@ class ForecastingTrader:
         :param model_config: dictionary with info for the model
         :return: all models
         """
-        print('Under construction')
-        #exit()
 
         models = []
         for pair in pairs:
@@ -168,7 +173,11 @@ class ForecastingTrader:
                                                                 epochs=model_config['epochs'],
                                                                 optimizer=model_config['optimizer'],
                                                                 loss_fct=model_config['loss_fct'])
+
             predictions = pd.Series(data=predictions.flatten(), index=y_series_val.index)
+            predictions_destandardized = self.destandardize(predictions,
+                                                            standardization_dict['mean'],
+                                                            standardization_dict['std'])
 
             # save all info
             model_info = {'leg1': pair[0],
@@ -176,11 +185,15 @@ class ForecastingTrader:
                           'info': pair[2].copy(),
                           'standardization_dict': standardization_dict,
                           'model': model,
-                          #'history': history,
+                          'history': history,
                           'score': score,
-                          'predictions': predictions.copy()}
+                          'predictions': predictions_destandardized.copy(),
+                          }
 
             models.append(model_info)
+
+        # append model configuration on last position
+        models.append(model_config)
 
         return models
 
@@ -196,18 +209,19 @@ class ForecastingTrader:
         y_val = validation_data[1]
 
         model = Sequential()
-        model.add(Dense(hidden_nodes, activation='relu', input_dim=n_in))
-        # model.add(Dropout(0.2))
-        # model.add(Dense(hidden_nodes, activation='relu', input_dim=n_in))
+        for i in range(len(hidden_nodes)):
+            model.add(Dense(hidden_nodes[i], activation='relu', input_dim=n_in))
+            # model.add(Dropout(0.2))
         model.add(Dense(1))
         model.compile(optimizer=optimizer, loss=loss_fct, metrics=['mae'])
         model.summary()
 
         # simple early stopping
-        #es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=50)
+        # es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=50)
+        # pb = ProgbarLogger(count_mode='samples', stateful_metrics=None)
 
-        history = model.fit(X, y, epochs=epochs, verbose=0, validation_data=validation_data,
-                            shuffle=False)#, callbacks=[es])
+        history = model.fit(X, y, epochs=epochs, verbose=2, validation_data=validation_data,
+                            shuffle=False, batch_size=128)  # , callbacks=[pb, es])
 
         train_score = model.evaluate(X, y, verbose=0)
         val_score = model.evaluate(X_val, y_val, verbose=0)

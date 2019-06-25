@@ -631,7 +631,7 @@ class Trader:
         :return: df with extra column providing return information for each position
         """
 
-        df['trading_days'] = 0
+        df['trading_duration'] = [0]*len(df)
         previous_unit = 0.
         new_position_counter = 0
         day = df.index[0].day
@@ -651,14 +651,14 @@ class Trader:
                     day = index.day
                     continue  # simply start the trade
                 else:
-                    df.loc[index, 'trading_days'] = new_position_counter
+                    df.loc[index, 'trading_duration'] = new_position_counter
                     previous_unit = row['numUnits']
                     # begin counter
                     new_position_counter = 1
                     day = index.day
                     continue
 
-        return df['trading_days']
+        return df['trading_duration']
 
     def add_transaction_costs(self, summary, comission_costs=0.08, market_impact=0.2, short_rental=1):
         """
@@ -851,6 +851,7 @@ class Trader:
         returns = df.apply(lambda row: self.return_per_position(row), axis=1).fillna(0)
         cum_returns = np.cumprod(returns + 1) - 1
         df['ret'] = returns
+        returns.name = 'position_return'
 
         return returns, cum_returns, df
 
