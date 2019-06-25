@@ -14,15 +14,13 @@ K.set_session(sess)
 
 import pandas as pd
 import pickle
-import time
-import sys
 
 forecasting_trader = class_ForecastingTrader.ForecastingTrader()
 data_processor = class_DataProcessor.DataProcessor()
 
 ################################# READ PRICES AND PAIRS #################################
 # read prices
-df_prices = pd.read_pickle('data/etfs/pickle/commodity_ETFs_intraday_interpolated_screened_no_outliers.pickle')
+df_prices = pd.read_pickle('../data/etfs/pickle/commodity_ETFs_intraday_interpolated_screened_no_outliers.pickle')
 # split data in training and test
 df_prices_train, df_prices_test = data_processor.split_data(df_prices,
                                                             ('01-01-2009',
@@ -31,7 +29,7 @@ df_prices_train, df_prices_test = data_processor.split_data(df_prices,
                                                              '31-12-2018'),
                                                             remove_nan=True)
 # load pairs
-with open('data/etfs/pickle/pairs_unsupervised_learning_intraday.pickle', 'rb') as handle:
+with open('../data/etfs/pickle/pairs_unsupervised_learning_intraday.pickle', 'rb') as handle:
     pairs = pickle.load(handle)
 n_years_train = round(len(df_prices_train) / (240 * 78))
 

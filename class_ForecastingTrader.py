@@ -180,6 +180,7 @@ class ForecastingTrader:
         # np.random.seed(0) # NumPy
         # tf.set_random_seed(2) # Tensorflow
         # random.seed(3) # Python
+        print(epochs)
 
         # define validation set
         X_val = validation_data[0]
