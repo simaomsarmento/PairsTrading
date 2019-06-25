@@ -12,31 +12,8 @@ sess = tf.Session(graph=tf.get_default_graph(), config=session_conf)
 K.set_session(sess)
 
 import pandas as pd
-import pickle
-
-import json
-
-import statsmodels
-import statsmodels.api as sm
-from statsmodels.tsa.stattools import coint, adfuller
 
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
-
-# Import Datetime and the Pandas DataReader
-from datetime import datetime
-from pandas_datareader import data, wb
-
-# Import alpha vantage
-from alpha_vantage.timeseries import TimeSeries
-
-# Import scikit instruments
-from sklearn.cluster import DBSCAN
-from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
-from sklearn import preprocessing
-from sklearn.metrics import silhouette_score
-from sklearn.metrics import mean_squared_error
 
 # Import keras
 from keras.models import Sequential
