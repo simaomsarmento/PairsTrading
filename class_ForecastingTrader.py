@@ -142,6 +142,7 @@ class ForecastingTrader:
 
             # train model and get predictions
             model = None # ensure new var is created
+            print('NUMBER OF EPOCHS: ', epochs)
             model, history, score, predictions = self.apply_MLP(X=train_data[0],
                                                                 y=train_data[1],
                                                                 validation_data=validation_data,
@@ -180,7 +181,7 @@ class ForecastingTrader:
         # np.random.seed(0) # NumPy
         # tf.set_random_seed(2) # Tensorflow
         # random.seed(3) # Python
-        print(epochs)
+        print('NUMBER OF EPOCHS: ', epochs)
 
         # define validation set
         X_val = validation_data[0]
