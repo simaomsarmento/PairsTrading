@@ -278,11 +278,11 @@ class ForecastingTrader:
 
             # transform predictions to series
             predictions_val = pd.Series(data=predictions_val.flatten(), index=y_series_val.index)
-            predictions_test = pd.Series(data=predictions_test.flatten(), index=spread_test.index)
+            predictions_test = pd.Series(data=predictions_test.flatten(), index=spread_test[-len(test_data[1]):].index)
             predictions_val_destandardized = self.destandardize(predictions_val, standardization_dict['mean'],
                                                                 standardization_dict[ 'std'])
             predictions_test_destandardized = self.destandardize(predictions_test, standardization_dict['mean'],
-                                                                standardization_dict['std'])
+                                                                 standardization_dict['std'])
 
             # save all info
             model_info = {'leg1': pair[0],

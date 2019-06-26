@@ -44,7 +44,7 @@ for input_dim in n_in_set:
     for i, hidden_nodes in enumerate(hidden_nodes_set):
         model_config = {"n_in": input_dim,
                         "n_out": 1,
-                        "epochs": 200,
+                        "epochs": 1,
                         "hidden_nodes": hidden_nodes,
                         "loss_fct": "mse",
                         "optimizer": "adam",
