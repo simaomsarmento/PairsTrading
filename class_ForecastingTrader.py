@@ -67,9 +67,11 @@ class ForecastingTrader:
         spread_train_pct_change = ((spread_train - spread_train.shift(lag)) / abs(spread_train.shift(lag))) * 100
         positive_changes = spread_train_pct_change[spread_train_pct_change > 0]
         negative_changes = spread_train_pct_change[spread_train_pct_change < 0]
-        long_threshold = positive_changes.quantile(q=high_quantile, interpolation='linear')
+        long_threshold = max(positive_changes.quantile(q=high_quantile, interpolation='linear'), 5) # eventualmente este filtro vai ser feito antes
+        long_threshold = min(long_threshold, 50)
         print('Long threshold: {:.2f}'.format(long_threshold))
-        short_threshold = negative_changes.quantile(q=low_quantile, interpolation='linear')
+        short_threshold = min(negative_changes.quantile(q=low_quantile, interpolation='linear'), -5)
+        short_threshold = max(short_threshold, -50)
         print('Short threshold: {:.2f}'.format(short_threshold))
 
         # 3. Define trading timings

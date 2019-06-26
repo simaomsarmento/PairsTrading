@@ -213,8 +213,8 @@ class Trader:
             cum_returns.append((np.cumprod(1 + summary.position_return) - 1).iloc[-1] * 100)
             sharpe_results.append(sharpe[0])
             # with costs
-            #cum_returns_with_costs.append((np.cumprod(1 + summary.daily_return) - 1).iloc[-1] * 100)
-            cum_returns_with_costs.append((summary.account_balance[-1]-1)*100)
+            cum_returns_with_costs.append((np.cumprod(1 + summary.position_ret_with_costs) - 1).iloc[-1] * 100)
+            #cum_returns_with_costs.append((summary.account_balance[-1]-1)*100)
             sharpe_results_with_costs.append(sharpe[1])
             performance.append((pair, summary, pnl_summary))
 
