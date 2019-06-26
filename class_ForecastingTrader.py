@@ -113,8 +113,7 @@ class ForecastingTrader:
         # 4. Calculate P&L and Returns
         # for consistency with returns function
         trader = class_Trader.Trader()
-        beta_series = pd.Series(data=[beta] * len(Y), index=Y.index, name='beta')
-        ret, _, _ = trader.calculate_position_returns(Y, X, beta_series, numUnits)
+        ret, _, _ = trader.calculate_position_returns(Y, X, beta, numUnits)
 
         # 5. add costs
         numUnits_df = pd.DataFrame(numUnits, index=Y.index)
@@ -123,8 +122,8 @@ class ForecastingTrader:
         position_during_day = pd.Series(data=numUnits.shift().fillna(0).values,
                                         index=numUnits.index,
                                         name='position_during_day')
-        ret_with_costs = trader.add_transaction_costs(pd.concat([trading_durations, position_during_day,
-                                                                 beta_series, ret], axis=1))
+        ret_with_costs = trader.add_transaction_costs(pd.concat([trading_durations, position_during_day, ret], axis=1),
+                                                      beta)
         cum_ret_with_costs = np.cumprod(1 + ret_with_costs) - 1
 
         # summarize

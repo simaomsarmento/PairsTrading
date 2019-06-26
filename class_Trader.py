@@ -127,16 +127,15 @@ class Trader:
 
         num_units = pd.Series(data=num_units.values, index=y.index, name='numUnits')
 
-        # for consistency with returns function
-        beta_series = pd.Series(data=[beta] * len(y), index=y.index)
-
         # position durations
         trading_durations = self.add_trading_duration(pd.DataFrame(num_units, index=y.index))
 
         if not rebalance:
-            position_ret, _, ret_summary = self.calculate_position_returns(y, x, beta_series, num_units)
+            position_ret, _, ret_summary = self.calculate_position_returns(y, x, beta, num_units)
         else:
             print('WARNING: COSTS ARE NOT ADJUSTED FOR DAILY REBALANCING, THIS MUST BE REVISED')
+            # for consistency with returns function
+            beta_series = pd.Series(data=[beta] * len(y), index=y.index)
             ret, _ = self.calculate_returns_adapted(y, x, beta_series, num_units.shift(1).fillna(0))
 
         pnl_summary = self.calculate_pnl(y, x, beta, num_units.shift(1).fillna(0), trading_durations)
@@ -150,12 +149,11 @@ class Trader:
                              (position_ret, 'position_return'),
                              (y, y.name),
                              (x, x.name),
-                             (beta_series, 'beta'),
                              (pd.Series(norm_spread, index=y.index), 'norm_spread'),
                              (num_units, 'numUnits'),
                              (trading_durations, 'trading_duration')]
 
-        summary = self.trade_summary(series_to_include)
+        summary = self.trade_summary(series_to_include, beta)
 
         # calculate sharpe ratio
         ret_w_costs = summary.daily_return
@@ -453,7 +451,7 @@ class Trader:
 
         return profitable_pairs
 
-    def trade_summary(self, series):
+    def trade_summary(self, series, beta):
         """
         This function receives a set of series containing information from the trade and
         returns a DataFrame containing the summary data.
@@ -475,7 +473,7 @@ class Trader:
         summary = summary.rename(columns={"numUnits": "position_during_day"})
 
         # add position costs
-        summary['position_ret_with_costs'] = self.add_transaction_costs(summary)
+        summary['position_ret_with_costs'] = self.add_transaction_costs(summary, beta)
         #summary = summary.drop('position_return', axis=1)
 
         return summary
@@ -660,7 +658,7 @@ class Trader:
 
         return df['trading_duration']
 
-    def add_transaction_costs(self, summary, comission_costs=0.08, market_impact=0.2, short_rental=1):
+    def add_transaction_costs(self, summary, beta, comission_costs=0.08, market_impact=0.2, short_rental=1):
         """
         Function to add transaction costs.
 
@@ -673,14 +671,14 @@ class Trader:
         fixed_costs_per_trade = (comission_costs + market_impact)/100 # remove percentage
         short_costs_per_day = (short_rental / 252) / 100  # remove percentage
 
-        costs = summary.apply(lambda row: self.apply_costs(row, fixed_costs_per_trade, short_costs_per_day), axis=1)
+        costs = summary.apply(lambda row: self.apply_costs(row, fixed_costs_per_trade, short_costs_per_day, beta),
+                              axis=1)
 
         ret_with_costs = summary['position_return']-costs
 
         return ret_with_costs
 
-    def apply_costs(self, row, fixed_costs_per_trade, short_costs_per_day):
-        beta = row['beta']
+    def apply_costs(self, row, fixed_costs_per_trade, short_costs_per_day, beta):
         if row['position_during_day'] == 1. and row['trading_duration']!= 0:
             if beta >= 1:
                 return fixed_costs_per_trade*(1/beta) + fixed_costs_per_trade + short_costs_per_day * \
@@ -822,14 +820,6 @@ class Trader:
         # positions preceed the day when the position is actually entered!
         # get indices before entering position
         new_positions = positions.diff()[positions.diff() != 0].index.values
-        # get corresponding betas
-        beta_position = pd.Series(data=[np.nan] * len(y), index=y.index, name='beta_position')
-        beta_position[new_positions] = beta[new_positions]
-        # fill in between time slots with same beta
-        beta_position = beta_position.fillna(method='ffill')
-        # shift betas to match row when position is on
-        beta_position = beta_position.shift().fillna(0)
-
         # create variable for signalizing end of position
         end_position = pd.Series(data=[0] * len(y), index=y.index, name='end_position')
         end_position[new_positions] = 1.
@@ -847,22 +837,22 @@ class Trader:
 
         # apply returns per trade
         # each row contain all the parameters to be applied in that position
-        df = pd.concat([y, x, beta_position, positions.shift().fillna(0), y_entry, x_entry, end_position], axis=1)
-        returns = df.apply(lambda row: self.return_per_position(row), axis=1).fillna(0)
+        df = pd.concat([y, x, positions.shift().fillna(0), y_entry, x_entry, end_position], axis=1)
+        returns = df.apply(lambda row: self.return_per_position(row, beta), axis=1).fillna(0)
         cum_returns = np.cumprod(returns + 1) - 1
         df['ret'] = returns
         returns.name = 'position_return'
 
         return returns, cum_returns, df
 
-    def return_per_position(self, row):
+    def return_per_position(self, row, beta):
         if row['end_position'] != 0:
             y_returns = (row['y']-row['y_entry'])/row['y_entry']
             x_returns = (row['x']-row['x_entry'])/row['x_entry']
-            if row['beta_position'] > 1.:
-                return ((1 / row['beta_position']) * y_returns - 1 * x_returns) * row['positions']
+            if beta > 1.:
+                return ((1 / beta) * y_returns - 1 * x_returns) * row['positions']
             else:
-                return (y_returns - row['beta_position'] * x_returns) * row['positions']
+                return (y_returns - beta * x_returns) * row['positions']
         else:
             return 0
 
