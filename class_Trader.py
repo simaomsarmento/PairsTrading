@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 
 import statsmodels.api as sm
-from statsmodels.tsa.stattools import coint, adfuller
 
 # just set the seed for the random number generator
 np.random.seed(107)
