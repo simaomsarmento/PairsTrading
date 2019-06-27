@@ -19,7 +19,7 @@ import class_Trader
 
 # Import keras
 from keras.models import Sequential
-from keras.layers import Dense, Flatten, LSTM, Dropout
+from keras.layers import Dense, Flatten, GRU, Dropout
 from keras.optimizers import SGD, Adam
 from keras.layers.convolutional import Conv1D
 from keras.layers.convolutional import MaxPooling1D
@@ -275,7 +275,8 @@ class ForecastingTrader:
                                                                             hidden_nodes=model_config['hidden_nodes'],
                                                                             epochs=model_config['epochs'],
                                                                             optimizer=model_config['optimizer'],
-                                                                            loss_fct=model_config['loss_fct'])
+                                                                            loss_fct=model_config['loss_fct'],
+                                                                            batch_size=model_config['batch_size'])
 
             # transform predictions to series
             predictions_val = pd.Series(data=predictions_val.flatten(), index=y_series_val.index)
@@ -309,12 +310,12 @@ class ForecastingTrader:
         return models
 
     # ################################### MLP ############################################
-    def apply_MLP(self, X, y, validation_data, test_data, n_in, hidden_nodes, epochs, optimizer, loss_fct):
+    def apply_MLP(self, X, y, validation_data, test_data, n_in, hidden_nodes, epochs, optimizer, loss_fct,
+                  batch_size=128):
         # reset seed
         # np.random.seed(0) # NumPy
         # tf.set_random_seed(2) # Tensorflow
         # random.seed(3) # Python
-        print('NUMBER OF EPOCHS: ', epochs)
 
         # define validation set
         X_val = validation_data[0]
@@ -337,7 +338,48 @@ class ForecastingTrader:
         # pb = ProgbarLogger(count_mode='samples', stateful_metrics=None)
 
         history = model.fit(X, y, epochs=epochs, verbose=2, validation_data=validation_data,
-                            shuffle=False, batch_size=128)  # , callbacks=[pb, es])
+                            shuffle=False, batch_size=batch_size)  # , callbacks=[pb, es])
+
+        train_score = model.evaluate(X, y, verbose=0)
+        val_score = model.evaluate(X_val, y_val, verbose=0)
+        test_score = model.evaluate(X_test, y_test, verbose=0)
+        score = {'train': train_score, 'val': val_score, 'test': test_score}
+
+        predictions_validation = model.predict(X_val)
+        predictions_test = model.predict(X_test)
+
+        print('------------------------------------------------------------')
+        print('The mse train loss is: ', train_score[0])
+        print('The mae train loss is: ', train_score[1])
+        print('The mse test loss is: ', val_score[0])
+        print('The mae test loss is: ', val_score[1])
+        print('------------------------------------------------------------')
+
+        return model, history, score, predictions_validation, predictions_test
+
+    # ################################### RNN ############################################
+    def apply_RNN(self, X, y, validation_data, test_data, n_in, hidden_nodes, epochs, optimizer, loss_fct,
+                  batch_size=256):
+        # reshape
+        X = X.reshape((X.shape[0], X.shape[1], 1))
+        X_val = validation_data[0].reshape((validation_data[0].shape[0], validation_data[0].shape[1], 1))
+        y_val = validation_data[1]
+        X_test = test_data[0].reshape((test_data[0].shape[0], test_data[0].shape[1], 1))
+        y_test = test_data[1]
+
+        # define model
+        model = Sequential()
+        model.add(GRU(hidden_nodes, activation='relu', input_shape=(n_in, 1)))
+        model.add(Dense(1))
+        model.compile(optimizer=optimizer, loss=loss_fct, metrics=['mae'])
+        model.summary()
+
+        # simple early stopping
+        es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=50)
+
+        # fit model
+        history = model.fit(X, y, epochs=epochs, verbose=2, validation_data=(X_val, y_val), shuffle=False,
+                            batch_size=batch_size, callbacks=[es])#,stateful=True
 
         train_score = model.evaluate(X, y, verbose=0)
         val_score = model.evaluate(X_val, y_val, verbose=0)

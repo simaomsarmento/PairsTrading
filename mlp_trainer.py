@@ -48,6 +48,7 @@ for input_dim in n_in_set:
                         "hidden_nodes": hidden_nodes,
                         "loss_fct": "mse",
                         "optimizer": "adam",
+                        "batch_size": 512,
                         "train_val_split": '2017-01-01',
                         "test_init": '2018-01-01'}
         models = forecasting_trader.train_models(pairs, model_config)
