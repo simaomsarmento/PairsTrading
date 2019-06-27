@@ -33,6 +33,7 @@ df_prices_train, df_prices_test = data_processor.split_data(df_prices,
 with open('../data/etfs/pickle/pairs_unsupervised_learning_intraday.pickle', 'rb') as handle:
     pairs = pickle.load(handle)
 n_years_train = round(len(df_prices_train) / (240 * 78))
+print('Loaded {} pairs!'.format(len(pairs)))
 
 ################################# TRAIN MODELS #################################
 
