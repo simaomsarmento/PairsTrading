@@ -36,7 +36,7 @@ n_years_train = round(len(df_prices_train) / (240 * 78))
 
 ################################# TRAIN MODELS #################################
 
-n_in_set = [5, 10, 15]
+n_in_set = [5, 10, 20]
 hidden_nodes_set = [[5], [10], [20], [5, 5], [10,10], [20, 20]]
 hidden_nodes_names = [str(nodes[0])+'*2' if len(nodes) > 1 else str(nodes[0]) for nodes in hidden_nodes_set]
 
