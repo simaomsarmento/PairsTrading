@@ -287,11 +287,18 @@ class ForecastingTrader:
                                                                  standardization_dict['std'])
 
             # save all info
+            # check epochs
+            if len(history.history['val_loss']) == 500:
+                epoch_stop = 500
+            else:
+                epoch_stop = len(history.history['val_loss']) - 50 # patience=50
+
             model_info = {'leg1': pair[0],
                           'leg2': pair[1],
                           'standardization_dict': standardization_dict,
                           'history': history.history,
                           'score': score,
+                          'epoch_stop': epoch_stop,
                           'predictions_val': predictions_val_destandardized.copy(),
                           'predictions_test': predictions_test_destandardized.copy()
                           }
@@ -334,11 +341,11 @@ class ForecastingTrader:
         model.summary()
 
         # simple early stopping
-        # es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=50)
+        es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=50)
         # pb = ProgbarLogger(count_mode='samples', stateful_metrics=None)
 
         history = model.fit(X, y, epochs=epochs, verbose=2, validation_data=validation_data,
-                            shuffle=False, batch_size=batch_size)  # , callbacks=[pb, es])
+                            shuffle=False, batch_size=batch_size, callbacks=[es]) # , callbacks=[pb, es])
 
         train_score = model.evaluate(X, y, verbose=0)
         val_score = model.evaluate(X_val, y_val, verbose=0)

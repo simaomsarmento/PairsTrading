@@ -36,15 +36,15 @@ n_years_train = round(len(df_prices_train) / (240 * 78))
 
 ################################# TRAIN MODELS #################################
 
-n_in_set = [7, 10, 12]
-hidden_nodes_set = [[5], [7], [10], [5, 5], [7,7], [10, 10]]
+n_in_set = [5, 10, 15]
+hidden_nodes_set = [[5], [10], [20], [5, 5], [10,10], [20, 20]]
 hidden_nodes_names = [str(nodes[0])+'*2' if len(nodes) > 1 else str(nodes[0]) for nodes in hidden_nodes_set]
 
 for input_dim in n_in_set:
     for i, hidden_nodes in enumerate(hidden_nodes_set):
         model_config = {"n_in": input_dim,
                         "n_out": 1,
-                        "epochs": 500, #1
+                        "epochs": 1, #500
                         "hidden_nodes": hidden_nodes,
                         "loss_fct": "mse",
                         "optimizer": "adam",
