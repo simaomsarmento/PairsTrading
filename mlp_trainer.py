@@ -37,8 +37,8 @@ print('Loaded {} pairs!'.format(len(pairs)))
 
 ################################# TRAIN MODELS #################################
 
-n_in_set = [5, 10, 20]
-hidden_nodes_set = [[5], [10], [20], [5, 5], [10,10], [20, 20]]
+n_in_set = [5, 10, 15]
+hidden_nodes_set = [[5], [10], [15], [5, 5], [10,10]]
 hidden_nodes_names = [str(nodes[0])+'*2' if len(nodes) > 1 else str(nodes[0]) for nodes in hidden_nodes_set]
 
 for input_dim in n_in_set:
