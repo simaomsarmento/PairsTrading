@@ -170,7 +170,7 @@ class Trader:
         return summary, (sharpe_no_costs, sharpe_w_costs), pnl_summary
 
     def apply_threshold_strategy(self, pairs, entry_multiplier=1, exit_multiplier=0, trading_filter=None,
-                                 test_mode=False, rebalance=False):
+                                 test_mode=False, rebalance=False, train_val_split='2017-01-01'):
         """
         This function calls the kalman filter implementation for every pair.
 
@@ -199,8 +199,8 @@ class Trader:
                 y = pair_info['Y_test']
                 x = pair_info['X_test']
             else:
-                y = pair_info['Y_train']
-                x = pair_info['X_train']
+                y = pair_info['Y_train'][train_val_split:]
+                x = pair_info['X_train'][train_val_split:]
             summary, sharpe, pnl_summary = self.threshold_strategy(y=y, x=x, beta=pair_info['coint_coef'],
                                                                    entry_level=entry_multiplier,
                                                                    exit_level=exit_multiplier,

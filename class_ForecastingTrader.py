@@ -110,6 +110,7 @@ class ForecastingTrader:
                         numUnits[i] = -1.
                         continue
 
+
         # 4. Calculate P&L and Returns
         # for consistency with returns function
         trader = class_Trader.Trader()
@@ -365,8 +366,8 @@ class ForecastingTrader:
         return model, history, score, predictions_validation, predictions_test
 
     # ################################### RNN ############################################
-    def apply_RNN(self, X, y, validation_data, test_data, n_in, hidden_nodes, epochs, optimizer, loss_fct,
-                  batch_size=256):
+    def apply_RNN(self, X, y, validation_data, test_data, hidden_nodes, epochs, optimizer, loss_fct,
+                  batch_size=256, lookback_window=1000):
         # reshape
         X = X.reshape((X.shape[0], X.shape[1], 1))
         X_val = validation_data[0].reshape((validation_data[0].shape[0], validation_data[0].shape[1], 1))
@@ -376,7 +377,7 @@ class ForecastingTrader:
 
         # define model
         model = Sequential()
-        model.add(GRU(hidden_nodes, activation='relu', input_shape=(n_in, 1)))
+        model.add(GRU(hidden_nodes, activation='relu', input_shape=(lookback_window, 1)))
         model.add(Dense(1))
         model.compile(optimizer=optimizer, loss=loss_fct, metrics=['mae'])
         model.summary()
