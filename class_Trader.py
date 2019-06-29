@@ -762,11 +762,19 @@ class Trader:
                     #        pnl_y[i] = pnl_y[i] - 1 * (0.01 / 252)*position_investment
                     # update legs
                     if beta > 1:
-                        leg_y[i] = position_investment*(1/beta) + pnl_y[i]
-                        leg_x[i] = position_investment + pnl_x[i]
+                        if positions[i] == 1:
+                            leg_y[i] = position_investment*(1/beta) + pnl_y[i]
+                            leg_x[i] = position_investment - pnl_x[i]
+                        else:
+                            leg_y[i] = position_investment * (1 / beta) - pnl_y[i]
+                            leg_x[i] = position_investment + pnl_x[i]
                     else:
-                        leg_y[i] = position_investment + pnl_y[i]
-                        leg_x[i] = position_investment*beta + pnl_x[i]
+                        if positions[i] == 1:
+                            leg_y[i] = position_investment + pnl_y[i]
+                            leg_x[i] = position_investment*beta - pnl_x[i]
+                        else:
+                            leg_y[i] = position_investment - pnl_y[i]
+                            leg_x[i] = position_investment*beta + pnl_x[i]
 
                 elif position_trigger[i] == 2:
                     # every new position invest initial 1$ + acc in X + acc in Y
@@ -787,11 +795,19 @@ class Trader:
                     #    pnl_x[i] = pnl_x[i] - 0.0028 * beta * position_investment  # add commission + bid ask spread
                     # update legs
                     if beta > 1:
-                        leg_y[i] = position_investment*(1/beta) + pnl_y[i]
-                        leg_x[i] = position_investment + pnl_x[i]
+                        if positions[i] == 1:
+                            leg_y[i] = position_investment*(1/beta) + pnl_y[i]
+                            leg_x[i] = position_investment - pnl_x[i]
+                        else:
+                            leg_y[i] = position_investment * (1 / beta) - pnl_y[i]
+                            leg_x[i] = position_investment + pnl_x[i]
                     else:
-                        leg_y[i] = position_investment + pnl_y[i]
-                        leg_x[i] = position_investment*beta + pnl_x[i]
+                        if positions[i] == 1:
+                            leg_y[i] = position_investment + pnl_y[i]
+                            leg_x[i] = position_investment*beta - pnl_x[i]
+                        else:
+                            leg_y[i] = position_investment - pnl_y[i]
+                            leg_x[i] = position_investment*beta + pnl_x[i]
 
                 else:
                     # calculate trade pnl
@@ -810,8 +826,13 @@ class Trader:
                     #            pnl_y[i] = pnl_y[i] - trading_durations[i] * (0.01 / 252) * position_investment
 
                     # update accumulated balance
-                    leg_y[i] = leg_y[i-1] + pnl_y[i]
-                    leg_x[i] = leg_x[i-1] + pnl_x[i]
+                    if positions[i] == 1:
+                        leg_y[i] = leg_y[i - 1] + pnl_y[i]
+                        leg_x[i] = leg_x[i - 1] - pnl_x[i]
+                    else:
+                        leg_y[i] = leg_y[i - 1] - pnl_y[i]
+                        leg_x[i] = leg_x[i - 1] + pnl_x[i]
+
         pnl = [pnl_y[i] + pnl_x[i] for i in range(len(y))]
 
         # join everything in dataframe
