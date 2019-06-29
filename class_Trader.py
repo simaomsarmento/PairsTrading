@@ -129,21 +129,22 @@ class Trader:
         trading_durations = self.add_trading_duration(pd.DataFrame(num_units, index=y.index))
 
         if not rebalance:
+            # calculate return per position
             position_ret, _, ret_summary = self.calculate_position_returns(y, x, beta, num_units)
+            # calculate balance in total
+            balance_summary = self.calculate_balance(y, x, beta, num_units.shift(1).fillna(0), trading_durations)
         else:
             print('WARNING: COSTS ARE NOT ADJUSTED FOR DAILY REBALANCING, THIS MUST BE REVISED')
             # for consistency with returns function
             beta_series = pd.Series(data=[beta] * len(y), index=y.index)
             ret, _ = self.calculate_returns_adapted(y, x, beta_series, num_units.shift(1).fillna(0))
 
-        pnl_summary = self.calculate_pnl(y, x, beta, num_units.shift(1).fillna(0), trading_durations)
-
         # add transaction costs and gather all info in df
-        series_to_include = [(pnl_summary.pnl, 'pnl'),
-                             (pnl_summary.pnl_y, 'pnl_y'),
-                             (pnl_summary.pnl_x, 'pnl_x'),
-                             (pnl_summary.account_balance, 'account_balance'),
-                             (pnl_summary.daily_return, 'daily_return'),
+        series_to_include = [(balance_summary.pnl, 'pnl'),
+                             (balance_summary.pnl_y, 'pnl_y'),
+                             (balance_summary.pnl_x, 'pnl_x'),
+                             (balance_summary.account_balance, 'account_balance'),
+                             (balance_summary.daily_return, 'daily_return'),
                              (position_ret, 'position_return'),
                              (y, y.name),
                              (x, x.name),
@@ -160,13 +161,13 @@ class Trader:
         n_trades_per_day = 78
         time_in_market = n_years * n_days * n_trades_per_day
         # apr = ((np.prod(1.+ret_w_costs))**(time_in_market/len(ret_w_costs)))-1
-        if np.std(position_ret) == 0:
+        if np.std(ret_w_costs) == 0:
             sharpe_no_costs, sharpe_w_costs = (0, 0)
         else:
             sharpe_no_costs = np.sqrt(time_in_market) * np.mean(position_ret) / np.std(position_ret)
             sharpe_w_costs = np.sqrt(time_in_market) * np.mean(ret_w_costs) / np.std(ret_w_costs)
 
-        return summary, (sharpe_no_costs, sharpe_w_costs), pnl_summary
+        return summary, (sharpe_no_costs, sharpe_w_costs), balance_summary
 
     def apply_threshold_strategy(self, pairs, entry_multiplier=1, exit_multiplier=0, trading_filter=None,
                                  test_mode=False, rebalance=False, train_val_split='2017-01-01'):
@@ -199,7 +200,7 @@ class Trader:
             else:
                 y = pair_info['Y_train'][train_val_split:]
                 x = pair_info['X_train'][train_val_split:]
-            summary, sharpe, pnl_summary = self.threshold_strategy(y=y, x=x, beta=pair_info['coint_coef'],
+            summary, sharpe, balance_summary = self.threshold_strategy(y=y, x=x, beta=pair_info['coint_coef'],
                                                                    entry_level=entry_multiplier,
                                                                    exit_level=exit_multiplier,
                                                                    trading_filter=trading_filter,
@@ -211,7 +212,7 @@ class Trader:
             cum_returns_with_costs.append((np.cumprod(1 + summary.position_ret_with_costs) - 1).iloc[-1] * 100)
             # cum_returns_with_costs.append((summary.account_balance[-1]-1)*100)
             sharpe_results_with_costs.append(sharpe[1])
-            performance.append((pair, summary, pnl_summary))
+            performance.append((pair, summary, balance_summary))
 
         return (sharpe_results, cum_returns), (sharpe_results_with_costs, cum_returns_with_costs), performance
 
@@ -687,7 +688,7 @@ class Trader:
         else:
             return 0
 
-    def calculate_pnl(self, y, x, beta, positions, trading_durations):
+    def calculate_balance(self, y, x, beta, positions, trading_durations):
 
         y_returns = y.pct_change().fillna(0) * positions
         x_returns = -x.pct_change().fillna(0) * positions
@@ -696,7 +697,7 @@ class Trader:
         leg_x = [np.nan] * len(y)  # initial balance
         pnl_y = [np.nan] * len(y)
         pnl_x = [np.nan] * len(y)
-        account_balance = 1
+        account_balance = [np.nan] * len(y)
 
         # auxiliary series to indicate beginning and end of position
         new_positions_idx = positions.diff()[positions.diff() != 0].index.values
@@ -714,6 +715,7 @@ class Trader:
             if i == 0:
                 pnl_y[0] = 0
                 pnl_x[0] = 0
+                account_balance[0] = 1
                 if beta > 1:
                     leg_y[0] = 1 / beta
                     leg_x[0] = 1
@@ -725,11 +727,12 @@ class Trader:
                 pnl_x[i] = 0
                 leg_y[i] = leg_y[i - 1]
                 leg_x[i] = leg_x[i - 1]
+                account_balance[i] = account_balance[i-1]
             else:
                 # add costs
                 if position_trigger[i] == 1:
                     # every new position invest initial 1$ + acc in X + acc in Y
-                    position_investment = (1 + (leg_y[i - 1] - leg_y[0]) + (leg_x[i - 1] - leg_x[0]))
+                    position_investment = account_balance[i-1]
                     # if new position, that most legs contain now the overall invested
                     if beta > 1:
                         pnl_y[i] = y_returns[i] * position_investment * (1 / beta)
@@ -769,10 +772,12 @@ class Trader:
                             pnl_x[i] = pnl_x[i] - 1 * (0.01 / 252)*beta*position_investment
                         elif positions[i] == -1:
                             pnl_y[i] = pnl_y[i] - 1 * (0.01 / 252)*position_investment
+                    # update balance
+                    account_balance[i] = account_balance[i-1] + pnl_x[i] + pnl_y[i]
 
                 elif position_trigger[i] == 2:
                     # every new position invest initial 1$ + acc in X + acc in Y
-                    position_investment = (1 + (leg_y[i - 1] - leg_y[0]) + (leg_x[i - 1] - leg_x[0]))
+                    position_investment = account_balance[i-1]
                     # if new position, that most legs contain now the overall invested
                     if beta > 1:
                         pnl_y[i] = y_returns[i] * position_investment * (1 / beta)
@@ -804,6 +809,8 @@ class Trader:
                     elif beta < 1:
                         pnl_y[i] = pnl_y[i] - 0.0028 * position_investment  # add commission + bid ask spread
                         pnl_x[i] = pnl_x[i] - 0.0028 * beta * position_investment  # add commission + bid ask spread
+                    # update balance
+                    account_balance[i] = account_balance[i - 1] + pnl_x[i] + pnl_y[i]
 
                 else:
                     # calculate trade pnl
@@ -831,22 +838,24 @@ class Trader:
                             elif beta < 1:
                                 pnl_y[i] = pnl_y[i] - trading_durations[i] * (0.01 / 252) * position_investment
 
+                    # update balance
+                    account_balance[i] = account_balance[i - 1] + pnl_x[i] + pnl_y[i]
         pnl = [pnl_y[i] + pnl_x[i] for i in range(len(y))]
 
         # join everything in dataframe
-        balance = pd.Series(data=(np.cumsum(pnl) + 1), index=y.index, name='account_balance')
-        daily_return = balance.pct_change().fillna(0);
+        balance = pd.Series(data=account_balance, index=y.index, name='account_balance')
+        daily_return = balance.pct_change().fillna(0)
         daily_return.name = 'daily_return'
         pnl = pd.Series(data=pnl, index=y.index, name='pnl')
         pnl_y = pd.Series(data=pnl_y, index=y.index, name='pnl_y')
         pnl_x = pd.Series(data=pnl_x, index=y.index, name='pnl_x')
         leg_y = pd.Series(data=leg_y, index=y.index, name='leg_y')
         leg_x = pd.Series(data=leg_x, index=y.index, name='leg_x')
-        pnl_summary = pd.concat(
-            [balance, pnl, pnl_y, pnl_x, leg_y, leg_x, daily_return, position_trigger, positions, y, x,
-             trading_durations], axis=1)
+        balance_summary = pd.concat(
+                [balance, pnl, pnl_y, pnl_x, leg_y, leg_x, daily_return, position_trigger, positions, y, x,
+                 trading_durations], axis=1)
 
-        return pnl_summary
+        return balance_summary
 
     def calculate_position_returns(self, y, x, beta, positions):
         """
