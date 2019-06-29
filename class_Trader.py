@@ -696,6 +696,7 @@ class Trader:
         leg_x = [np.nan] * len(y)  # initial balance
         pnl_y = [np.nan] * len(y)
         pnl_x = [np.nan] * len(y)
+        account_balance = 1
 
         # auxiliary series to indicate beginning and end of position
         new_positions_idx = positions.diff()[positions.diff() != 0].index.values
