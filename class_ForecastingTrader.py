@@ -285,6 +285,14 @@ class ForecastingTrader:
                                                                                 optimizer=model_config['optimizer'],
                                                                                 loss_fct=model_config['loss_fct'],
                                                                                 batch_size=model_config['batch_size'])
+                # save keras model
+                nodes = model_config['hidden_nodes']
+                nodes_name = str(nodes[0]) + '*2_' if len(nodes) > 1 else str(nodes[0])
+                model.save('../mlp_models/keras_models/models_n_in-' + str(
+                    model_config['n_in']) + '_hidden_nodes-' + nodes_name +
+                           '_{}_{}'.format(pair[0], pair[1]) + '.h5')  # creates a HDF5 file 'my_model.h5'
+                del model  # deletes the existing model
+
             elif model == 'rnn':
                 model, history, score, predictions_val, predictions_test = self.apply_RNN(X=train_data[0],
                                                                              y=train_data[1],
@@ -295,6 +303,13 @@ class ForecastingTrader:
                                                                              optimizer=model_config['optimizer'],
                                                                              loss_fct=model_config['loss_fct'],
                                                                              batch_size=model_config['batch_size'])
+                # save keras model
+                nodes = model_config['hidden_nodes']
+                nodes_name = str(nodes[0]) + '*2_' if len(nodes) > 1 else str(nodes[0])
+                model.save('../rnn_models/keras_models/models_n_in-' + str(
+                    model_config['n_in']) + '_hidden_nodes-' + nodes_name +
+                           '_{}_{}'.format(pair[0], pair[1]) + '.h5')  # creates a HDF5 file 'my_model.h5'
+                del model  # deletes the existing model
 
             # transform predictions to series
             predictions_val = scaler.inverse_transform(predictions_val)
@@ -324,13 +339,6 @@ class ForecastingTrader:
                           'predictions_test': predictions_test.copy()
                           }
             models.append(model_info)
-
-            # save keras model
-            nodes = model_config['hidden_nodes']
-            nodes_name = str(nodes[0]) + '*2_' if len(nodes) > 1 else str(nodes[0])
-            model.save('../models/keras_models/models_n_in-'+str(model_config['n_in'])+'_hidden_nodes-'+nodes_name+
-                       '_{}_{}'.format(pair[0], pair[1])+'.h5')  # creates a HDF5 file 'my_model.h5'
-            del model  # deletes the existing model
 
         # append model configuration on last position
         models.append(model_config)
