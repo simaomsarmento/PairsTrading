@@ -254,7 +254,7 @@ class ForecastingTrader:
         """
         return predictions * spread_std + spread_mean
 
-    def train_models(self, pairs, model_config, model='mlp'):
+    def train_models(self, pairs, model_config, model_type='mlp'):
         """
         This function trains the models for every pair identified.
 
@@ -273,7 +273,7 @@ class ForecastingTrader:
             spread_test = pair[2]['Y_test']-pair[2]['coint_coef']*pair[2]['X_test']
             test_data = self.prepare_test_data(spread_test, model_config, scaler)
 
-            if model == 'mlp':
+            if model_type == 'mlp':
                 # train model and get predictions
                 model, history, score, predictions_val, predictions_test = self.apply_MLP(X=train_data[0],
                                                                                 y=train_data[1],
@@ -293,7 +293,7 @@ class ForecastingTrader:
                            '_{}_{}'.format(pair[0], pair[1]) + '.h5')  # creates a HDF5 file 'my_model.h5'
                 del model  # deletes the existing model
 
-            elif model == 'rnn':
+            elif model_type == 'rnn':
                 model, history, score, predictions_val, predictions_test = self.apply_RNN(X=train_data[0],
                                                                              y=train_data[1],
                                                                              validation_data=validation_data,
@@ -406,7 +406,7 @@ class ForecastingTrader:
         # define model
         model = Sequential()
         # add GRU layers
-        if len(hidden_nodes)==1:
+        if len(hidden_nodes) == 1:
             model.add(GRU(hidden_nodes[0], activation='relu', input_shape=(X.shape[1], 1)))
         else:
             for i in range(len(hidden_nodes)-1):
