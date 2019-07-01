@@ -51,7 +51,7 @@ for i, configuration in enumerate(combinations):
                     "batch_size": 512,
                     "train_val_split": '2017-01-01',
                     "test_init": '2018-01-01'}
-    models = forecasting_trader.train_models(pairs, model_config, model='rnn')
+    models = forecasting_trader.train_models(pairs, model_config, model_type='rnn')
 
     # save models for this configuration
     with open('../rnn_models/models_n_in-' + str(configuration[0]) + '_hidden_nodes-' + hidden_nodes_names[i] + '.pkl', 'wb') as f:
