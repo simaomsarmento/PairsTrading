@@ -54,7 +54,7 @@ for input_dim in n_in_set:
                         "test_init": '2018-01-01'}
         models = forecasting_trader.train_models(pairs, model_config)
         # save models for this configuration
-        with open('../models/models_n_in-'+str(input_dim)+'_hidden_nodes-'+hidden_nodes_names[i]+'.pkl', 'wb') as f:
+        with open('../mlp_models/models_n_in-'+str(input_dim)+'_hidden_nodes-'+hidden_nodes_names[i]+'.pkl', 'wb') as f:
             pickle.dump(models, f)
 
 gc.collect()

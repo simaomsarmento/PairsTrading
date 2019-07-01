@@ -17,6 +17,8 @@ import matplotlib.pyplot as plt
 
 import class_Trader
 
+from sklearn.preprocessing import MinMaxScaler
+
 # Import keras
 from keras.models import Sequential
 from keras.layers import Dense, Flatten, GRU, Dropout
@@ -204,9 +206,12 @@ class ForecastingTrader:
         train_val_split = model_config['train_val_split']
 
         # save data form original spread
-        standardization_dict = {'mean': spread[:train_val_split].mean(), 'std': np.std(spread[:train_val_split])}
-        spread = (spread - standardization_dict['mean']) / standardization_dict['std']
-        forecasting_data = self.series_to_supervised(list(spread), spread.index, model_config['n_in'],
+        #standardization_dict = {'mean': spread[:train_val_split].mean(), 'std': np.std(spread[:train_val_split])}
+        #spread = (spread - standardization_dict['mean']) / standardization_dict['std']
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        spread_norm = scaler.fit_transform(spread.values.reshape(spread.shape[0], 1))
+        spread_norm = pd.Series(data=spread_norm.flatten(), index=spread.index)
+        forecasting_data = self.series_to_supervised(list(spread_norm), spread.index, model_config['n_in'],
                                                      model_config['n_out'], dropnan=True)
         # define dataset
         X_series = forecasting_data.drop(columns='var1(t)')
@@ -223,14 +228,16 @@ class ForecastingTrader:
         y_train = y_series_train.values
         y_val = y_series_val.values
 
-        return (X_train, y_train), (X_val, y_val), y_series_val, standardization_dict
+        return (X_train, y_train), (X_val, y_val), y_series_val, scaler
 
-    def prepare_test_data(self, spread, model_config, standardization_dict):
+    def prepare_test_data(self, spread, model_config, scaler):
         """
         """
         # normalize spread
-        spread = (spread - standardization_dict['mean']) / standardization_dict['std']
-        forecasting_data = self.series_to_supervised(list(spread), spread.index, model_config['n_in'],
+        #spread = (spread - standardization_dict['mean']) / standardization_dict['std']
+        spread_norm = scaler.transform(spread.values.reshape(spread.shape[0], 1))
+        spread_norm = pd.Series(data=spread_norm.flatten(), index=spread.index)
+        forecasting_data = self.series_to_supervised(list(spread_norm), spread.index, model_config['n_in'],
                                                      model_config['n_out'], dropnan=True)
         # define dataset
         X_series_test = forecasting_data.drop(columns='var1(t)')
@@ -247,7 +254,7 @@ class ForecastingTrader:
         """
         return predictions * spread_std + spread_mean
 
-    def train_models(self, pairs, model_config):
+    def train_models(self, pairs, model_config, model='mlp'):
         """
         This function trains the models for every pair identified.
 
@@ -261,31 +268,44 @@ class ForecastingTrader:
 
             # prepare train data
             spread = pair[2]['spread']
-            train_data, validation_data, y_series_val, standardization_dict = self.prepare_train_data(spread,
-                                                                                                      model_config)
+            train_data, validation_data, y_series_val, scaler = self.prepare_train_data(spread, model_config)
             # prepare test data
             spread_test = pair[2]['Y_test']-pair[2]['coint_coef']*pair[2]['X_test']
-            test_data = self.prepare_test_data(spread_test, model_config, standardization_dict)
+            test_data = self.prepare_test_data(spread_test, model_config, scaler)
 
-            # train model and get predictions
-            model, history, score, predictions_val, predictions_test = self.apply_MLP(X=train_data[0],
-                                                                            y=train_data[1],
-                                                                            validation_data=validation_data,
-                                                                            test_data=test_data,
-                                                                            n_in=model_config['n_in'],
-                                                                            hidden_nodes=model_config['hidden_nodes'],
-                                                                            epochs=model_config['epochs'],
-                                                                            optimizer=model_config['optimizer'],
-                                                                            loss_fct=model_config['loss_fct'],
-                                                                            batch_size=model_config['batch_size'])
+            if model == 'mlp':
+                # train model and get predictions
+                model, history, score, predictions_val, predictions_test = self.apply_MLP(X=train_data[0],
+                                                                                y=train_data[1],
+                                                                                validation_data=validation_data,
+                                                                                test_data=test_data,
+                                                                                n_in=model_config['n_in'],
+                                                                                hidden_nodes=model_config['hidden_nodes'],
+                                                                                epochs=model_config['epochs'],
+                                                                                optimizer=model_config['optimizer'],
+                                                                                loss_fct=model_config['loss_fct'],
+                                                                                batch_size=model_config['batch_size'])
+            elif model == 'rnn':
+                model, history, score, predictions_val, predictions_test = self.apply_RNN(X=train_data[0],
+                                                                             y=train_data[1],
+                                                                             validation_data=validation_data,
+                                                                             test_data=test_data,
+                                                                             hidden_nodes=model_config['hidden_nodes'],
+                                                                             epochs=model_config['epochs'],
+                                                                             optimizer=model_config['optimizer'],
+                                                                             loss_fct=model_config['loss_fct'],
+                                                                             batch_size=model_config['batch_size'])
 
             # transform predictions to series
+            predictions_val = scaler.inverse_transform(predictions_val)
+            predictions_test = scaler.inverse_transform(predictions_test)
             predictions_val = pd.Series(data=predictions_val.flatten(), index=y_series_val.index)
             predictions_test = pd.Series(data=predictions_test.flatten(), index=spread_test[-len(test_data[1]):].index)
-            predictions_val_destandardized = self.destandardize(predictions_val, standardization_dict['mean'],
-                                                                standardization_dict[ 'std'])
-            predictions_test_destandardized = self.destandardize(predictions_test, standardization_dict['mean'],
-                                                                 standardization_dict['std'])
+
+            #predictions_val_destandardized = self.destandardize(predictions_val, standardization_dict['mean'],
+            #                                                    standardization_dict[ 'std'])
+            #predictions_test_destandardized = self.destandardize(predictions_test, standardization_dict['mean'],
+            #                                                     standardization_dict['std'])
 
             # save all info
             # check epochs
@@ -296,12 +316,12 @@ class ForecastingTrader:
 
             model_info = {'leg1': pair[0],
                           'leg2': pair[1],
-                          'standardization_dict': standardization_dict,
+                          'standardization_dict': 'scaler',
                           'history': history.history,
                           'score': score,
                           'epoch_stop': epoch_stop,
-                          'predictions_val': predictions_val_destandardized.copy(),
-                          'predictions_test': predictions_test_destandardized.copy()
+                          'predictions_val': predictions_val.copy(),
+                          'predictions_test': predictions_test.copy()
                           }
             models.append(model_info)
 
