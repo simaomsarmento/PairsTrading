@@ -44,7 +44,7 @@ for i, configuration in enumerate(combinations):
 
     model_config = {"n_in": configuration[0],
                     "n_out": 1,
-                    "epochs": 1,#500,
+                    "epochs": 500,
                     "hidden_nodes": configuration[1],
                     "loss_fct": "mse",
                     "optimizer": "adam",
