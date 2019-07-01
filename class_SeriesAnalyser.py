@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-import time
+import sys
 
 import statsmodels.api as sm
 from statsmodels.tsa.stattools import coint, adfuller
@@ -66,39 +66,46 @@ class SeriesAnalyser:
             S1 = np.asarray(pair[0])
             S2 = np.asarray(pair[1])
 
-            #series_name = S1.name
-            S1_c = sm.add_constant(S1)
-            # Y = bX + c
-            # ols: (Y, X)
-            results = sm.OLS(S2, S1_c).fit()
-            b = results.params[1]
+            # first of all, must verify price series S1 and S2 are I(1)
+            stats_S1 = self.check_for_stationarity(S1, subsample=subsample)
+            if stats_S1['p_value'] > 0.10:
+                stats_S2 = self.check_for_stationarity(S2, subsample=subsample)
+                if stats_S2['p_value'] > 0.10:
 
-            spread = pair[1] - b * pair[0] # as Pandas Series
-            spread_array = np.asarray(spread) # as array for faster computations
+                    #series_name = S1.name
+                    S1_c = sm.add_constant(S1)
+                    # Y = bX + c
+                    # ols: (Y, X)
+                    results = sm.OLS(S2, S1_c).fit()
+                    b = results.params[1]
 
-            stats = self.check_for_stationarity(spread_array, subsample=subsample)
-            if stats['p_value'] < p_value_threshold:  # verifies required pvalue
+                    if b > 0:
+                        spread = pair[1] - b * pair[0] # as Pandas Series
+                        spread_array = np.asarray(spread) # as array for faster computations
 
-                zero_cross = self.zero_crossings(spread_array)
-                if zero_cross >= min_zero_crossings:
+                        stats = self.check_for_stationarity(spread_array, subsample=subsample)
+                        if stats['p_value'] < p_value_threshold:  # verifies required pvalue
 
-                    hl = self.calculate_half_life(spread_array)
-                    if hl >= min_half_life:
+                            zero_cross = self.zero_crossings(spread_array)
+                            if zero_cross >= min_zero_crossings:
 
-                        hurst_exponent = self.hurst(spread_array)
-                        if hurst_exponent < hurst_threshold:
+                                hl = self.calculate_half_life(spread_array)
+                                if hl >= min_half_life:
 
-                            coint_stats[i] = {'t_statistic': stats['t_statistic'],
-                                              'critical_val': stats['critical_values'],
-                                              'p_value': stats['p_value'],
-                                              'coint_coef': b,
-                                              'zero_cross': zero_cross,
-                                              'half_life': int(round(hl)),
-                                              'hurst_exponent': hurst_exponent,
-                                              'spread': spread,
-                                              'Y_train': pair[1],
-                                              'X_train': pair[0]
-                                              }
+                                    hurst_exponent = self.hurst(spread_array)
+                                    if hurst_exponent < hurst_threshold:
+
+                                        coint_stats[i] = {'t_statistic': stats['t_statistic'],
+                                                          'critical_val': stats['critical_values'],
+                                                          'p_value': stats['p_value'],
+                                                          'coint_coef': b,
+                                                          'zero_cross': zero_cross,
+                                                          'half_life': int(round(hl)),
+                                                          'hurst_exponent': hurst_exponent,
+                                                          'spread': spread,
+                                                          'Y_train': pair[1],
+                                                          'X_train': pair[0]
+                                                          }
 
         if coint_stats[0] == 0 and coint_stats[1] == 0:
             coint_result = None
@@ -409,7 +416,8 @@ class SeriesAnalyser:
         total_pairs = []
         n_clusters = len(clustered_series.value_counts())
         for clust in range(n_clusters):
-            print('Cluster {}/{}'.format(clust+1, n_clusters))
+            sys.stdout.write("\r"+'Cluster {}/{}'.format(clust+1, n_clusters))
+            sys.stdout.flush()
             symbols = list(clustered_series[clustered_series == clust].index)
             cluster_pricing_train = pricing_df_train[symbols]
             cluster_pricing_test = pricing_df_test[symbols]

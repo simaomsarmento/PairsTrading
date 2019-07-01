@@ -367,7 +367,7 @@ class ForecastingTrader:
 
     # ################################### RNN ############################################
     def apply_RNN(self, X, y, validation_data, test_data, hidden_nodes, epochs, optimizer, loss_fct,
-                  batch_size=256, lookback_window=1000):
+                  batch_size=256):
         # reshape
         X = X.reshape((X.shape[0], X.shape[1], 1))
         X_val = validation_data[0].reshape((validation_data[0].shape[0], validation_data[0].shape[1], 1))
@@ -377,7 +377,21 @@ class ForecastingTrader:
 
         # define model
         model = Sequential()
-        model.add(GRU(hidden_nodes, activation='relu', input_shape=(lookback_window, 1)))
+        # add GRU layers
+        if len(hidden_nodes)==1:
+            model.add(GRU(hidden_nodes[0], activation='relu', input_shape=(X.shape[1], 1)))
+        else:
+            for i in range(len(hidden_nodes)-1):
+                if i == 0:
+                    model.add(GRU(hidden_nodes[0], activation='relu', input_shape=(X.shape[1], 1),
+                                  return_sequences=True))
+                else:
+                    model.add(GRU(hidden_nodes[i], activation='relu', return_sequences=True))
+                # add dropout in between
+                model.add(Dropout(0.2))
+
+            model.add(GRU(hidden_nodes[-1], activation='relu')) # last layer does not return sequences
+        # add dense layer for output
         model.add(Dense(1))
         model.compile(optimizer=optimizer, loss=loss_fct, metrics=['mae'])
         model.summary()

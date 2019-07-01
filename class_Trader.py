@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-
+import sys
 import statsmodels.api as sm
 
 # just set the seed for the random number generator
@@ -164,7 +164,10 @@ class Trader:
         if np.std(ret_w_costs) == 0:
             sharpe_no_costs, sharpe_w_costs = (0, 0)
         else:
-            sharpe_no_costs = np.sqrt(time_in_market) * np.mean(position_ret) / np.std(position_ret)
+            if np.std(position_ret) == 0:
+                sharpe_no_costs=0
+            else:
+                sharpe_no_costs = np.sqrt(time_in_market) * np.mean(position_ret) / np.std(position_ret)
             sharpe_w_costs = np.sqrt(time_in_market) * np.mean(ret_w_costs) / np.std(ret_w_costs)
 
         return summary, (sharpe_no_costs, sharpe_w_costs), balance_summary
@@ -187,7 +190,8 @@ class Trader:
         cum_returns_with_costs = []
         performance = []  # aux variable to store pairs' record
         for i, pair in enumerate(pairs):
-            print('Pair: {}/{}'.format(i + 1, len(pairs)))
+            sys.stdout.write("\r"+'Pair: {}/{}'.format(i + 1, len(pairs)))
+            sys.stdout.flush()
             pair_info = pair[2]
             if trading_filter is not None:
                 trading_filter['lookback'] = min(
@@ -209,8 +213,8 @@ class Trader:
             cum_returns.append((np.cumprod(1 + summary.position_return) - 1).iloc[-1] * 100)
             sharpe_results.append(sharpe[0])
             # with costs
-            cum_returns_with_costs.append((np.cumprod(1 + summary.position_ret_with_costs) - 1).iloc[-1] * 100)
-            # cum_returns_with_costs.append((summary.account_balance[-1]-1)*100)
+            #cum_returns_with_costs.append((np.cumprod(1 + summary.position_ret_with_costs) - 1).iloc[-1] * 100)
+            cum_returns_with_costs.append((summary.account_balance[-1]-1)*100)
             sharpe_results_with_costs.append(sharpe[1])
             performance.append((pair, summary, balance_summary))
 
