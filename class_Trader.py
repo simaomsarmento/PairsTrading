@@ -159,16 +159,14 @@ class Trader:
         n_years = round(len(y) / (240 * 78))
         n_days = 252
         n_trades_per_day = 78
-        time_in_market = n_years * n_days * n_trades_per_day
-        # apr = ((np.prod(1.+ret_w_costs))**(time_in_market/len(ret_w_costs)))-1
         if np.std(ret_w_costs) == 0:
             sharpe_no_costs, sharpe_w_costs = (0, 0)
         else:
             if np.std(position_ret) == 0:
                 sharpe_no_costs=0
             else:
-                sharpe_no_costs = np.sqrt(time_in_market) * np.mean(position_ret) / np.std(position_ret)
-            sharpe_w_costs = np.sqrt(time_in_market) * np.mean(ret_w_costs) / np.std(ret_w_costs)
+                sharpe_no_costs = self.calculate_sharpe_ratio(n_years, n_days, n_trades_per_day, position_ret)
+            sharpe_w_costs = self.calculate_sharpe_ratio(n_years, n_days, n_trades_per_day, ret_w_costs)
 
         return summary, (sharpe_no_costs, sharpe_w_costs), balance_summary
 
@@ -621,7 +619,7 @@ class Trader:
         """
         The following function adds a column containing the info concerning the last position
         returns
-        :param df: Dataframe containing the trading summary
+        :param df: Dataframe containing column with positions to enter in next day
         :return: df with extra column providing return information for each position
         """
 
@@ -693,7 +691,16 @@ class Trader:
             return 0
 
     def calculate_balance(self, y, x, beta, positions, trading_durations):
+        """
+        Function to calculate balance during a trading session.
 
+        :param y: y series
+        :param x: x series
+        :param beta: pair's cointegration coefficient
+        :param positions: position during the current day
+        :param trading_durations: series with trading duration of each trade
+        :return: balance dataframe containing summary info
+        """
         y_returns = y.pct_change().fillna(0) * positions
         x_returns = -x.pct_change().fillna(0) * positions
 
@@ -860,6 +867,20 @@ class Trader:
                  trading_durations], axis=1)
 
         return balance_summary
+
+    def calculate_sharpe_ratio(self, n_years, n_days, n_trades_per_day, ret):
+        """
+
+        :param n_years: number of years being considered
+        :param n_days: number of trading days per year
+        :param n_trades_per_day: number of trades per day - depends on tick frequency
+        :param ret: array containing returns per timestep
+        :return: sharpe ratio
+        """
+        time_in_market = n_years * n_days * n_trades_per_day
+        sharpe_ratio = np.sqrt(time_in_market) * np.mean(ret) / np.std(ret)
+
+        return sharpe_ratio
 
     def calculate_position_returns(self, y, x, beta, positions):
         """
