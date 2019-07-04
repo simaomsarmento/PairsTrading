@@ -512,8 +512,9 @@ class ForecastingTrader:
                                                             high_quantile=high_quantile)
             print('Accumulated return: {:.2f}%'.format(cumret[-1] * 100))
 
+            trader = class_Trader.Trader()
             if np.std(ret) != 0:
-                sharpe_ratio = np.sqrt(252*1*78) * np.mean(ret) / np.std(ret)
+                sharpe_ratio = trader.calculate_sharpe_ratio(1, 252, ret)
             else:
                 sharpe_ratio = 0
             print('Sharpe Ratio:', sharpe_ratio)
@@ -556,8 +557,9 @@ class ForecastingTrader:
                                                             high_quantile=high_quantile)
                 print('Accumulated return: {:.2f}%'.format(cumret[-1] * 100))
 
+                trader = class_Trader.Trader()
                 if np.std(ret) != 0:
-                    sharpe_ratio = np.sqrt(252 * 1 * 78) * np.mean(ret) / np.std(ret)
+                    sharpe_ratio = trader.calculate_sharpe_ratio(1, 252, ret)
                 else:
                     sharpe_ratio = 0
                 print('Sharpe Ratio:', sharpe_ratio)
