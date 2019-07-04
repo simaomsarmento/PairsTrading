@@ -144,7 +144,7 @@ class Trader:
                              (balance_summary.pnl_y, 'pnl_y'),
                              (balance_summary.pnl_x, 'pnl_x'),
                              (balance_summary.account_balance, 'account_balance'),
-                             (balance_summary.daily_return, 'daily_return'),
+                             (balance_summary.returns, 'returns'),
                              (position_ret, 'position_return'),
                              (y, y.name),
                              (x, x.name),
@@ -155,18 +155,17 @@ class Trader:
         summary = self.trade_summary(series_to_include, beta)
 
         # calculate sharpe ratio
-        ret_w_costs = summary.daily_return
+        ret_w_costs = summary.returns
         n_years = round(len(y) / (240 * 78))
         n_days = 252
-        n_trades_per_day = 78
         if np.std(ret_w_costs) == 0:
             sharpe_no_costs, sharpe_w_costs = (0, 0)
         else:
             if np.std(position_ret) == 0:
                 sharpe_no_costs=0
             else:
-                sharpe_no_costs = self.calculate_sharpe_ratio(n_years, n_days, n_trades_per_day, position_ret)
-            sharpe_w_costs = self.calculate_sharpe_ratio(n_years, n_days, n_trades_per_day, ret_w_costs)
+                sharpe_no_costs = self.calculate_sharpe_ratio(n_years, n_days, position_ret)
+            sharpe_w_costs = self.calculate_sharpe_ratio(n_years, n_days, ret_w_costs)
 
         return summary, (sharpe_no_costs, sharpe_w_costs), balance_summary
 
@@ -855,30 +854,30 @@ class Trader:
 
         # join everything in dataframe
         balance = pd.Series(data=account_balance, index=y.index, name='account_balance')
-        daily_return = balance.pct_change().fillna(0)
-        daily_return.name = 'daily_return'
+        returns = balance.pct_change().fillna(0)
+        returns.name = 'returns'
         pnl = pd.Series(data=pnl, index=y.index, name='pnl')
         pnl_y = pd.Series(data=pnl_y, index=y.index, name='pnl_y')
         pnl_x = pd.Series(data=pnl_x, index=y.index, name='pnl_x')
         leg_y = pd.Series(data=leg_y, index=y.index, name='leg_y')
         leg_x = pd.Series(data=leg_x, index=y.index, name='leg_x')
         balance_summary = pd.concat(
-                [balance, pnl, pnl_y, pnl_x, leg_y, leg_x, daily_return, position_trigger, positions, y, x,
+                [balance, pnl, pnl_y, pnl_x, leg_y, leg_x, returns, position_trigger, positions, y, x,
                  trading_durations], axis=1)
 
         return balance_summary
 
-    def calculate_sharpe_ratio(self, n_years, n_days, n_trades_per_day, ret):
+    def calculate_sharpe_ratio(self, n_years, n_days, ret):
         """
 
         :param n_years: number of years being considered
         :param n_days: number of trading days per year
-        :param n_trades_per_day: number of trades per day - depends on tick frequency
         :param ret: array containing returns per timestep
         :return: sharpe ratio
         """
-        time_in_market = n_years * n_days * n_trades_per_day
-        sharpe_ratio = np.sqrt(time_in_market) * np.mean(ret) / np.std(ret)
+        time_in_market = n_years * n_days
+        daily_ret = (ret+1).resample('D').prod() -1
+        sharpe_ratio = np.sqrt(time_in_market) * np.mean(daily_ret) / np.std(daily_ret)
 
         return sharpe_ratio
 

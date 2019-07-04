@@ -130,7 +130,7 @@ class ForecastingTrader:
         balance_summary = trader.calculate_balance(Y, X, beta, numUnits.shift(1).fillna(0), trading_durations)
 
         # summarize
-        ret_with_costs, cum_ret_with_costs = balance_summary.daily_return, (balance_summary.account_balance-1)
+        ret_with_costs, cum_ret_with_costs = balance_summary.returns, (balance_summary.account_balance-1)
         bins = [-np.inf, -0.00000001, 0.00000001, np.inf]
         names = ['-1', '0', '1']
         summary = pd.DataFrame(data={'prediction(t)': predictions.values,
@@ -373,7 +373,7 @@ class ForecastingTrader:
         es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=50)
         # pb = ProgbarLogger(count_mode='samples', stateful_metrics=None)
 
-        history = model.fit(X, y, epochs=epochs, verbose=2, validation_data=validation_data,
+        history = model.fit(X, y, epochs=epochs, verbose=1, validation_data=validation_data,
                             shuffle=False, batch_size=batch_size, callbacks=[es]) # , callbacks=[pb, es])
 
         train_score = model.evaluate(X, y, verbose=0)
@@ -428,7 +428,7 @@ class ForecastingTrader:
         es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=50)
 
         # fit model
-        history = model.fit(X, y, epochs=epochs, verbose=2, validation_data=(X_val, y_val), shuffle=False,
+        history = model.fit(X, y, epochs=epochs, verbose=1, validation_data=(X_val, y_val), shuffle=False,
                             batch_size=batch_size, callbacks=[es])#,stateful=True
 
         train_score = model.evaluate(X, y, verbose=0)
