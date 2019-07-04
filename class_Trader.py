@@ -81,7 +81,7 @@ class Trader:
         return zscore, rolling_beta
 
     def threshold_strategy(self, y, x, beta, entry_level=1.0, exit_level=1.0, stabilizing_threshold=5,
-                           trading_filter=None, rebalance=False):
+                           trading_filter=None):
         """
         This function implements a threshold filter strategy with a fixed beta, found from cointegration test.
         :param y:
@@ -128,16 +128,11 @@ class Trader:
         # position durations
         trading_durations = self.add_trading_duration(pd.DataFrame(num_units, index=y.index))
 
-        if not rebalance:
-            # calculate return per position
-            position_ret, _, ret_summary = self.calculate_position_returns(y, x, beta, num_units)
-            # calculate balance in total
-            balance_summary = self.calculate_balance(y, x, beta, num_units.shift(1).fillna(0), trading_durations)
-        else:
-            print('WARNING: COSTS ARE NOT ADJUSTED FOR DAILY REBALANCING, THIS MUST BE REVISED')
-            # for consistency with returns function
-            beta_series = pd.Series(data=[beta] * len(y), index=y.index)
-            ret, _ = self.calculate_returns_adapted(y, x, beta_series, num_units.shift(1).fillna(0))
+
+        # calculate return per position
+        position_ret, _, ret_summary = self.calculate_position_returns(y, x, beta, num_units)
+        # calculate balance in total
+        balance_summary = self.calculate_balance(y, x, beta, num_units.shift(1).fillna(0), trading_durations)
 
         # add transaction costs and gather all info in df
         series_to_include = [(balance_summary.pnl, 'pnl'),
@@ -170,7 +165,7 @@ class Trader:
         return summary, (sharpe_no_costs, sharpe_w_costs), balance_summary
 
     def apply_threshold_strategy(self, pairs, entry_multiplier=1, exit_multiplier=0, trading_filter=None,
-                                 test_mode=False, rebalance=False, train_val_split='2017-01-01'):
+                                 test_mode=False, train_val_split='2017-01-01'):
         """
         This function calls the kalman filter implementation for every pair.
         :param pairs: list with pairs identified in the training set information
@@ -204,8 +199,7 @@ class Trader:
             summary, sharpe, balance_summary = self.threshold_strategy(y=y, x=x, beta=pair_info['coint_coef'],
                                                                    entry_level=entry_multiplier,
                                                                    exit_level=exit_multiplier,
-                                                                   trading_filter=trading_filter,
-                                                                   rebalance=rebalance)
+                                                                   trading_filter=trading_filter)
             # no costs
             cum_returns.append((np.cumprod(1 + summary.position_return) - 1).iloc[-1] * 100)
             sharpe_results.append(sharpe[0])
@@ -218,7 +212,7 @@ class Trader:
         return (sharpe_results, cum_returns), (sharpe_results_with_costs, cum_returns_with_costs), performance
 
     def kalman_filter(self, y, x, entry_multiplier=1.0, exit_multiplier=1.0, stabilizing_threshold=5,
-                      trading_filter=None, rebalance=False):
+                      trading_filter=None):
         """
         This function implements a Kalman Filter for the estimation of
         the moving hedge ratio
@@ -320,72 +314,32 @@ class Trader:
         numUnitsShort = numUnitsShort.fillna(method='ffill')
 
         numUnits = numUnitsLong + numUnitsShort
+        numUnits = pd.Series(data=numUnits.values, index=y_series.index, name='numUnits')
 
-        # apply trading filter
-        if trading_filter is not None:
-            if trading_filter['name'] == 'correlation':
-                numUnits = self.apply_correlation_filter(lookback=trading_filter['lookback'],
-                                                         lag=trading_filter['lag'],
-                                                         threshold=trading_filter['diff_threshold'],
-                                                         Y=y_series,
-                                                         X=x_series,
-                                                         units=numUnits
-                                                         )
-            elif trading_filter['name'] == 'zscore_diff':
-                numUnits = self.apply_zscorediff_filter(lag=trading_filter['lag'],
-                                                        threshold=trading_filter['diff_threshold'],
-                                                        zscore=zscore,
-                                                        units=numUnits
-                                                        )
-
-        # tmp1 = np.tile(np.matrix(numUnits).T, 2)
-        # tmp2 = np.hstack((-1*beta[0, :].T, np.ones((len(y),1))))
-        # positions = np.array(tmp1)*np.array(tmp2)*y2
-        # positions = pd.DataFrame(positions)
-        # tmp1 = np.array(positions.shift(1))
-        # tmp2 = np.array(y2-y2.shift(1))
-        # tmp3 = np.array(y2.shift(1))
-        # pnl = np.sum(tmp1 * tmp2 / tmp3,axis=1)
-        # ret = pnl / np.sum(np.abs(positions.shift(1)),axis=1)
-        # ret = ret.fillna(0)
-        # ret = ret.dropna()
+        # position durations
+        trading_durations = self.add_trading_duration(pd.DataFrame(numUnits, index=y_series.index))
 
         numUnits = pd.Series(data=numUnits.values, index=y_series.index)
         beta = pd.Series(data=np.squeeze(np.asarray(beta[0, :])), index=y_series.index).fillna(0)
-        if not rebalance:
-            ret, _, ret_summary = self.calculate_position_returns(y_series, x_series, beta, numUnits)
-        else:
-            print('WARNING: COSTS ARE NOT ADJUSTED FOR DAILY REBALANCING, THIS MUST BE REVISED')
-            ret, _ = self.calculate_returns_adapted(y_series, x_series, beta, numUnits.shift(1).fillna(0))
+
+        position_ret, _, ret_summary = self.calculate_sliding_position_returns(y_series, x_series, beta, numUnits)
 
         # add transaction costs and gather all info in df
-        series_to_include = [(ret, 'ret'),
+        series_to_include = [(position_ret, 'position_return'),
                              (y_series, y_series.name),
                              (x_series, x_series.name),
-                             (beta, 'beta'),
+                             (beta, 'beta_position'),
                              (pd.Series(e, index=y_series.index), 'e'),
                              (pd.Series(np.sqrt(Q), index=y_series.index), 'sqrt(Q)'),
-                             (numUnits, 'numUnits')]
+                             (numUnits, 'numUnits'),
+                             (trading_durations, 'trading_duration')]
 
         summary = self.trade_summary(series_to_include)
 
-        # calculate sharpe ratio
-        ret_w_costs = summary.position_ret_with_costs
-        n_years = round(len(y) / (240 * 78))
-        n_days = 252
-        n_trades_per_day = 78
-        time_in_market = n_years * n_days * n_trades_per_day
-        # apr = ((np.prod(1.+ret_w_costs))**(time_in_market/len(ret_w_costs)))-1
-        if np.std(ret) == 0:
-            sharpe_no_costs, sharpe_w_costs = (0, 0)
-        else:
-            sharpe_no_costs = np.sqrt(time_in_market) * np.mean(ret) / np.std(ret)
-            sharpe_w_costs = np.sqrt(time_in_market) * np.mean(ret_w_costs) / np.std(ret_w_costs)
-
-        return summary, (sharpe_no_costs, sharpe_w_costs), ret_summary
+        return summary, ret_summary
 
     def apply_kalman_strategy(self, pairs, entry_multiplier=1, exit_multiplier=0, trading_filter=None,
-                              test_mode=False, rebalance=False):
+                              test_mode=False, train_val_split='2017-01-01'):
         """
         This function calls the kalman filter implementation for every pair.
         :param pairs: list with pairs identified in the training set information
@@ -402,10 +356,8 @@ class Trader:
         cum_returns_with_costs = []
         performance = []  # aux variable to store pairs' record
         for i, pair in enumerate(pairs):
-            # start = time.time()
-            # end = time.time()
-            # print((end - start))
-            print('Pair: {}/{}'.format(i + 1, len(pairs)))
+            sys.stdout.write("\r" + 'Pair: {}/{}'.format(i + 1, len(pairs)))
+            sys.stdout.flush()
             pair_info = pair[2]
             if trading_filter is not None:
                 trading_filter['lookback'] = min(
@@ -416,19 +368,18 @@ class Trader:
                 y = pair_info['Y_test']
                 x = pair_info['X_test']
             else:
-                y = pair_info['Y_train']
-                x = pair_info['X_train']
-            summary, sharpe, ret_summary = self.kalman_filter(y=y, x=x,
-                                                              entry_multiplier=entry_multiplier,
-                                                              exit_multiplier=exit_multiplier,
-                                                              trading_filter=trading_filter,
-                                                              rebalance=rebalance)
+                y = pair_info['Y_train'][train_val_split:]
+                x = pair_info['X_train'][train_val_split:]
+            summary, ret_summary = self.kalman_filter(y=y, x=x,
+                                                      entry_multiplier=entry_multiplier,
+                                                      exit_multiplier=exit_multiplier,
+                                                      trading_filter=trading_filter)
             # no costs
             cum_returns.append((np.cumprod(1 + summary.position_return) - 1).iloc[-1] * 100)
-            sharpe_results.append(sharpe[0])
+            sharpe_results.append(0)
             # with costs
             cum_returns_with_costs.append((np.cumprod(1 + summary.position_ret_with_costs) - 1).iloc[-1] * 100)
-            sharpe_results_with_costs.append(sharpe[1])
+            sharpe_results_with_costs.append(0)
             performance.append((pair, summary, ret_summary))
 
         return (sharpe_results, cum_returns), (sharpe_results_with_costs, cum_returns_with_costs), performance
@@ -448,7 +399,7 @@ class Trader:
 
         return profitable_pairs
 
-    def trade_summary(self, series, beta):
+    def trade_summary(self, series, beta=0):
         """
         This function receives a set of series containing information from the trade and
         returns a DataFrame containing the summary data.
@@ -651,7 +602,7 @@ class Trader:
 
         return df['trading_duration']
 
-    def add_transaction_costs(self, summary, beta, comission_costs=0.08, market_impact=0.2, short_rental=1):
+    def add_transaction_costs(self, summary, beta=0, comission_costs=0.08, market_impact=0.2, short_rental=1):
         """
         Function to add transaction costs.
         :param summary: dataframe containing summary of all transactions
@@ -670,7 +621,11 @@ class Trader:
 
         return ret_with_costs
 
-    def apply_costs(self, row, fixed_costs_per_trade, short_costs_per_day, beta):
+    def apply_costs(self, row, fixed_costs_per_trade, short_costs_per_day, beta=0):
+
+        if beta == 0:
+            beta = row['beta_position']
+
         if row['position_during_day'] == 1. and row['trading_duration'] != 0:
             if beta >= 1:
                 return fixed_costs_per_trade * (1 / beta) + fixed_costs_per_trade + short_costs_per_day * \
@@ -889,9 +844,9 @@ class Trader:
         positions: array indicating position to enter in next day
         """
         # get copy of series
-        y = y.copy();
+        y = y.copy()
         y.name = 'y'
-        x = x.copy();
+        x = x.copy()
         x.name = 'x'
 
         # positions preceed the day when the position is actually entered!
@@ -922,43 +877,67 @@ class Trader:
 
         return returns, cum_returns, df
 
-    def return_per_position(self, row, beta):
+    def calculate_sliding_position_returns(self, y, x, beta, positions):
+        """
+        Y: price of ETF Y
+        X: price of ETF X
+        beta: moving cointegration ratio
+        positions: array indicating position to enter in next day
+        """
+        # get copy of series
+        y = y.copy()
+        y.name = 'y'
+        x = x.copy()
+        x.name = 'x'
+
+        # positions preceed the day when the position is actually entered!
+        # get indices before entering position
+        new_positions = positions.diff()[positions.diff() != 0].index.values
+        # get corresponding betas
+        beta_position = pd.Series(data=[np.nan] * len(y), index=y.index, name='beta_position')
+        beta_position[new_positions] = beta[new_positions]
+        # fill in between time slots with same beta
+        beta_position = beta_position.fillna(method='ffill')
+        # shift betas to match row when position is on
+        beta_position = beta_position.shift().fillna(0)
+
+        # create variable for signalizing end of position
+        end_position = pd.Series(data=[0] * len(y), index=y.index, name='end_position')
+        end_position[new_positions] = 1.
+
+        # get corresponding X and Y
+        y_entry = pd.Series(data=[np.nan] * len(y), index=y.index, name='y_entry')
+        x_entry = pd.Series(data=[np.nan] * len(y), index=y.index, name='x_entry')
+        y_entry[new_positions] = y[new_positions]
+        x_entry[new_positions] = x[new_positions]
+        y_entry = y_entry.shift().fillna(method='ffill')
+        x_entry = x_entry.shift().fillna(method='ffill')
+
+        # name positions series
+        positions.name = 'positions'
+
+        # apply returns per trade
+        # each row contain all the parameters to be applied in that position
+        df = pd.concat([y, x, beta_position, positions.shift().fillna(0), y_entry, x_entry, end_position], axis=1)
+        returns = df.apply(lambda row: self.return_per_position(row, sliding=True), axis=1).fillna(0)
+        cum_returns = np.cumprod(returns + 1) - 1
+        df['ret'] = returns
+        returns.name = 'position_return'
+
+        return returns, cum_returns, df
+
+    def return_per_position(self, row, beta=None, sliding=False):
         if row['end_position'] != 0:
             y_returns = (row['y'] - row['y_entry']) / row['y_entry']
             x_returns = (row['x'] - row['x_entry']) / row['x_entry']
+            if sliding:
+                beta = row['beta_position']
             if beta > 1.:
                 return ((1 / beta) * y_returns - 1 * x_returns) * row['positions']
             else:
                 return (y_returns - beta * x_returns) * row['positions']
         else:
             return 0
-
-    def calculate_returns_adapted(self, y, x, beta, positions):
-        """
-        Y: price of ETF Y
-        X: price of ETF X
-        beta: cointegration ratio
-        positions: array indicating when to take a position
-        """
-        # calculate each leg return
-        y_returns = y.pct_change().fillna(0);
-        y_returns.name = 'y_returns'
-        x_returns = x.pct_change().fillna(0);
-        x_returns.name = 'x_returns'
-
-        # name positions series
-        positions.name = 'positions'
-
-        # beta must shift from row above
-        beta_position = beta.shift().fillna(0)
-        beta_position.name = 'beta_position'
-
-        # apply returns per trade
-        df = pd.concat([y_returns, x_returns, beta_position, positions], axis=1)
-        returns = df.apply(lambda row: self.return_per_timestep(row), axis=1)
-        cum_returns = np.cumprod(returns + 1) - 1
-
-        return returns, cum_returns
 
     def return_per_timestep(self, row):
         if row['beta_position'] > 1.:

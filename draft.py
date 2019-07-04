@@ -1,7 +1,6 @@
 # This file contains old functions, not being used anymore but might turn out helpful at some point in time
 
 # trader.py
-
 def bollinger_bands_ec(self, Y, X, lookback, entry_multiplier=1, exit_multiplier=0):
     df = pd.concat([Y, X], axis=1)
     df = df.reset_index()
@@ -293,6 +292,33 @@ def calculate_returns_no_rebalance(self, y, x, beta, positions):
     # apply returns per trade
     # each row contain all the parameters to be applied in that position
     df = pd.concat([y_returns, x_returns, beta_position, positions.shift().fillna(0)], axis=1)
+    returns = df.apply(lambda row: self.return_per_timestep(row), axis=1)
+    cum_returns = np.cumprod(returns + 1) - 1
+
+    return returns, cum_returns
+
+def calculate_returns_adapted(self, y, x, beta, positions):
+    """
+    Y: price of ETF Y
+    X: price of ETF X
+    beta: cointegration ratio
+    positions: array indicating when to take a position
+    """
+    # calculate each leg return
+    y_returns = y.pct_change().fillna(0);
+    y_returns.name = 'y_returns'
+    x_returns = x.pct_change().fillna(0);
+    x_returns.name = 'x_returns'
+
+    # name positions series
+    positions.name = 'positions'
+
+    # beta must shift from row above
+    beta_position = beta.shift().fillna(0)
+    beta_position.name = 'beta_position'
+
+    # apply returns per trade
+    df = pd.concat([y_returns, x_returns, beta_position, positions], axis=1)
     returns = df.apply(lambda row: self.return_per_timestep(row), axis=1)
     cum_returns = np.cumprod(returns + 1) - 1
 
