@@ -80,8 +80,7 @@ class Trader:
 
         return zscore, rolling_beta
 
-    def threshold_strategy(self, y, x, beta, entry_level=1.0, exit_level=1.0, stabilizing_threshold=5,
-                           trading_filter=None):
+    def threshold_strategy(self, y, x, beta, entry_level=1.0, exit_level=1.0, stabilizing_threshold=5):
         """
         This function implements a threshold filter strategy with a fixed beta, found from cointegration test.
         :param y:
@@ -89,7 +88,6 @@ class Trader:
         :param entry_multiplier:
         :param exit_multiplier:
         :param stabilizing_threshold:
-        :param trading_filter:
         :return:
         """
 
@@ -164,14 +162,13 @@ class Trader:
 
         return summary, (sharpe_no_costs, sharpe_w_costs), balance_summary
 
-    def apply_threshold_strategy(self, pairs, entry_multiplier=1, exit_multiplier=0, trading_filter=None,
-                                 test_mode=False, train_val_split='2017-01-01'):
+    def apply_trading_strategy(self, pairs, strategy='fixed_beta', entry_multiplier=1, exit_multiplier=0,
+                               test_mode=False, train_val_split='2017-01-01'):
         """
         This function calls the kalman filter implementation for every pair.
         :param pairs: list with pairs identified in the training set information
         :param entry_multiplier: threshold that defines where to enter a position
         :param exit_multiplier: threshold that defines where to exit a position
-        :param trading_filter:  trading_flter dictionary with parameters or None object in case of no filter
         :param test_mode: flag to decide whether to apply strategy on the training set or in the test set
         :return: sharpe ratio results
         :return: cumulative returns
@@ -185,10 +182,6 @@ class Trader:
             sys.stdout.write("\r"+'Pair: {}/{}'.format(i + 1, len(pairs)))
             sys.stdout.flush()
             pair_info = pair[2]
-            if trading_filter is not None:
-                trading_filter['lookback'] = min(
-                    trading_filter['filter_lookback_multiplier'] * (pair_info['half_life']),
-                    20)
 
             if test_mode:
                 y = pair_info['Y_test']
@@ -196,23 +189,49 @@ class Trader:
             else:
                 y = pair_info['Y_train'][train_val_split:]
                 x = pair_info['X_train'][train_val_split:]
-            summary, sharpe, balance_summary = self.threshold_strategy(y=y, x=x, beta=pair_info['coint_coef'],
+
+            if strategy == 'fixed_beta':
+                summary, sharpe, balance_summary = self.threshold_strategy(y=y, x=x, beta=pair_info['coint_coef'],
                                                                    entry_level=entry_multiplier,
-                                                                   exit_level=exit_multiplier,
-                                                                   trading_filter=trading_filter)
-            # no costs
-            cum_returns.append((np.cumprod(1 + summary.position_return) - 1).iloc[-1] * 100)
-            sharpe_results.append(sharpe[0])
-            # with costs
-            #cum_returns_with_costs.append((np.cumprod(1 + summary.position_ret_with_costs) - 1).iloc[-1] * 100)
-            cum_returns_with_costs.append((summary.account_balance[-1]-1)*100)
-            sharpe_results_with_costs.append(sharpe[1])
-            performance.append((pair, summary, balance_summary))
+                                                                   exit_level=exit_multiplier)
+                # no costs
+                cum_returns.append((np.cumprod(1 + summary.position_return) - 1).iloc[-1] * 100)
+                sharpe_results.append(sharpe[0])
+                # with costs
+                # cum_returns_with_costs.append((np.cumprod(1 + summary.position_ret_with_costs) - 1).iloc[-1] * 100)
+                cum_returns_with_costs.append((summary.account_balance[-1] - 1) * 100)
+                sharpe_results_with_costs.append(sharpe[1])
+                performance.append((pair, summary, balance_summary))
+
+            elif strategy == 'kalman_filter':
+                summary, ret_summary = self.kalman_filter(y=y, x=x,
+                                                          entry_multiplier=entry_multiplier,
+                                                          exit_multiplier=exit_multiplier)
+
+                cum_returns.append((np.cumprod(1 + summary.position_return) - 1).iloc[-1] * 100)
+                cum_returns_with_costs.append((np.cumprod(1 + summary.position_ret_with_costs) - 1).iloc[-1] * 100)
+                sharpe_results, sharpe_results_with_costs = 0, 0
+                performance.append((pair, summary))
+
+            elif strategy == 'bollinger_bands':
+                summary, ret_summary = self.bollinger_bands(y=y, x=x,
+                                                          entry_multiplier=entry_multiplier,
+                                                          exit_multiplier=exit_multiplier,
+                                                          lookback=78*80)
+
+                cum_returns.append((np.cumprod(1 + summary.position_return) - 1).iloc[-1] * 100)
+                cum_returns_with_costs.append((np.cumprod(1 + summary.position_ret_with_costs) - 1).iloc[-1] * 100)
+                print(' ',cum_returns_with_costs[-1])
+                sharpe_results, sharpe_results_with_costs = 0, 0
+                performance.append((pair, summary))
+
+            else:
+                print('3 strategies are available: \n1.Fixed Beta\n2.Bollinger Bands\n3.Kalman Filter')
+                exit()
 
         return (sharpe_results, cum_returns), (sharpe_results_with_costs, cum_returns_with_costs), performance
 
-    def kalman_filter(self, y, x, entry_multiplier=1.0, exit_multiplier=1.0, stabilizing_threshold=5,
-                      trading_filter=None):
+    def kalman_filter(self, y, x, entry_multiplier=1.0, exit_multiplier=1.0, stabilizing_threshold=5):
         """
         This function implements a Kalman Filter for the estimation of
         the moving hedge ratio
@@ -221,7 +240,6 @@ class Trader:
         :param entry_multiplier:
         :param exit_multiplier:
         :param stabilizing_threshold:
-        :param trading_filter:
         :return:
         """
 
@@ -319,9 +337,7 @@ class Trader:
         # position durations
         trading_durations = self.add_trading_duration(pd.DataFrame(numUnits, index=y_series.index))
 
-        numUnits = pd.Series(data=numUnits.values, index=y_series.index)
         beta = pd.Series(data=np.squeeze(np.asarray(beta[0, :])), index=y_series.index).fillna(0)
-
         position_ret, _, ret_summary = self.calculate_sliding_position_returns(y_series, x_series, beta, numUnits)
 
         # add transaction costs and gather all info in df
@@ -338,51 +354,69 @@ class Trader:
 
         return summary, ret_summary
 
-    def apply_kalman_strategy(self, pairs, entry_multiplier=1, exit_multiplier=0, trading_filter=None,
-                              test_mode=False, train_val_split='2017-01-01'):
+    def bollinger_bands(self, y, x, lookback, entry_multiplier=1, exit_multiplier=0):
         """
-        This function calls the kalman filter implementation for every pair.
-        :param pairs: list with pairs identified in the training set information
-        :param entry_multiplier: threshold that defines where to enter a position
-        :param exit_multiplier: threshold that defines where to exit a position
-        :param trading_filter:  trading_flter dictionary with parameters or None object in case of no filter
-        :param test_mode: flag to decide whether to apply strategy on the training set or in the test set
-        :return: sharpe ratio results
-        :return: cumulative returns
+        This function implements a pairs trading strategy based
+        on bollinger bands.
+        Source: Example 3.2 EC's book
+        : Y & X: time series composing the spread
+        : lookback : Lookback period
+        : entry_multiplier : defines the multiple of std deviation used to enter a position
+        : exit_multiplier: defines the multiple of std deviation used to exit a position
         """
-        sharpe_results = []
-        cum_returns = []
-        sharpe_results_with_costs = []
-        cum_returns_with_costs = []
-        performance = []  # aux variable to store pairs' record
-        for i, pair in enumerate(pairs):
-            sys.stdout.write("\r" + 'Pair: {}/{}'.format(i + 1, len(pairs)))
-            sys.stdout.flush()
-            pair_info = pair[2]
-            if trading_filter is not None:
-                trading_filter['lookback'] = min(
-                    trading_filter['filter_lookback_multiplier'] * (pair_info['half_life']),
-                    20)
+        # print("Warning: don't forget lookback (halflife) must be at least 3.")
 
-            if test_mode:
-                y = pair_info['Y_test']
-                x = pair_info['X_test']
-            else:
-                y = pair_info['Y_train'][train_val_split:]
-                x = pair_info['X_train'][train_val_split:]
-            summary, ret_summary = self.kalman_filter(y=y, x=x,
-                                                      entry_multiplier=entry_multiplier,
-                                                      exit_multiplier=exit_multiplier,
-                                                      trading_filter=trading_filter)
-            # no costs
-            cum_returns.append((np.cumprod(1 + summary.position_return) - 1).iloc[-1] * 100)
-            sharpe_results.append(0)
-            # with costs
-            cum_returns_with_costs.append((np.cumprod(1 + summary.position_ret_with_costs) - 1).iloc[-1] * 100)
-            sharpe_results_with_costs.append(0)
-            performance.append((pair, summary, ret_summary))
+        entryZscore = entry_multiplier
+        exitZscore = exit_multiplier
 
-        return (sharpe_results, cum_returns), (sharpe_results_with_costs, cum_returns_with_costs), performance
+        # obtain zscore
+        zscore, rolling_beta = self.rolling_zscore(y, x, lookback)
+        zscore_array = np.asarray(zscore)
+
+        # find long and short indices
+        numUnitsLong = pd.Series([np.nan for i in range(len(y))])
+        numUnitsLong.iloc[0] = 0.
+        long_entries = self.cross_threshold(zscore_array, -entryZscore, 'down', 'entry')
+        numUnitsLong[long_entries] = 1.0
+        long_exits = self.cross_threshold(zscore_array, -exitZscore, 'up')
+        numUnitsLong[long_exits] = 0.0
+        numUnitsLong = numUnitsLong.fillna(method='ffill')
+        numUnitsLong.index = zscore.index
+
+        numUnitsShort = pd.Series([np.nan for i in range(len(y))])
+        numUnitsShort.iloc[0] = 0.
+        short_entries = self.cross_threshold(zscore_array, entryZscore, 'up', 'entry')
+        numUnitsShort[short_entries] = -1.0
+        short_exits = self.cross_threshold(zscore_array, exitZscore, 'down')
+        numUnitsShort[short_exits] = 0.0
+        numUnitsShort = numUnitsShort.fillna(method='ffill')
+        numUnitsShort.index = zscore.index
+
+        # concatenate all positions
+        numUnits = numUnitsShort + numUnitsLong
+        numUnits = pd.Series(data=numUnits.values, index=y.index, name='numUnits')
+
+        # position durations
+        trading_durations = self.add_trading_duration(pd.DataFrame(numUnits, index=y.index))
+
+        beta = rolling_beta.copy()
+        position_ret, _, ret_summary = self.calculate_sliding_position_returns(y, x, beta, numUnits)
+
+        # get trade summary
+        rolling_spread = y - rolling_beta * x
+
+        # All series contain Date as index
+        series_to_include = [(position_ret, 'position_return'),
+                             (y, y.name),
+                             (x, x.name),
+                             (rolling_beta, 'beta_position'),
+                             (rolling_spread, 'spread'),
+                             (zscore, 'zscore'),
+                             (numUnits, 'numUnits'),
+                             (trading_durations, 'trading_duration')]
+        summary = self.trade_summary(series_to_include)
+
+        return summary, ret_summary
 
     def filter_profitable_pairs(self, sharpe_results, pairs):
         """

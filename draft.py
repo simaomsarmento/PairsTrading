@@ -211,59 +211,6 @@ def linear_strategy(self, Y, X, lookback):
 
     return pnl, total_pnl, ret
 
-def apply_bollinger_strategy(self, pairs, lookback, entry_multiplier=2, exit_multiplier=0.5,
-                             trading_filter=None, test_mode = False):
-    """
-    This function applies the bollinger strategy. We do not let the lookback extend further than 20 days,
-    as this would be too long of a period for the time ranges we are dealing with
-
-    :param pairs: pairs to trade
-    :param lookback_multiplier: half life multiplier to define lookback period
-    :param entry_multiplier: multiplier to define position entry level
-    :param exit_multiplier: multiplier to define position exit level
-    :param trading_filter: trading_flter dictionary with parameters or None object in case of no filter
-    :param test_mode: flag to decide whether to apply strategy on the training set or in the test set
-
-    :return: sharpe ratio results
-    :return: cumulative returns
-    :return: pairs which had a negative sharpe ratio
-    """
-
-    sharpe_results = []
-    cum_returns = []
-    performance = []  # aux variable to store pairs' record
-
-    for i,pair in enumerate(pairs):
-        # start = time.time()
-        #end = time.time()
-        #print((end - start))
-        print('\n{}/{}'.format(i+1, len(pairs)))
-        pair_info = pair[2]
-
-        if trading_filter is not None:
-            trading_filter['lookback'] = min(trading_filter['filter_lookback_multiplier']*(pair_info['half_life']),
-                                             20)
-
-        if lookback >= len(pair_info['Y_train']):
-            print('Error: lookback is larger than length of the series')
-
-        if test_mode:
-            y = pair_info['Y_test']
-            x = pair_info['X_test']
-        else:
-            y = pair_info['Y_train']
-            x = pair_info['X_train']
-        pnl, ret, summary, sharpe = self.bollinger_bands(Y=y,X=x,
-                                                         lookback=lookback,
-                                                         entry_multiplier=entry_multiplier,
-                                                         exit_multiplier=int(exit_multiplier),
-                                                         trading_filter=trading_filter)
-        cum_returns.append((np.cumprod(1 + ret) - 1)[-1] * 100)
-        sharpe_results.append(sharpe)
-        performance.append((pair, summary))
-
-    return sharpe_results, cum_returns, performance
-
 def calculate_returns_no_rebalance(self, y, x, beta, positions):
     """
     Y: price of ETF Y

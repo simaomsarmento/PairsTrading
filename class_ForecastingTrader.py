@@ -71,10 +71,10 @@ class ForecastingTrader:
         positive_changes = spread_train_pct_change[spread_train_pct_change > 0]
         negative_changes = spread_train_pct_change[spread_train_pct_change < 0]
         long_threshold = max(positive_changes.quantile(q=high_quantile, interpolation='linear'), 5)
-        #long_threshold = min(long_threshold, 50)
+        long_threshold = min(long_threshold, 50)
         print('Long threshold: {:.2f}'.format(long_threshold))
         short_threshold = min(negative_changes.quantile(q=low_quantile, interpolation='linear'), -5)
-        #short_threshold = max(short_threshold, -50)
+        short_threshold = max(short_threshold, -50)
         print('Short threshold: {:.2f}'.format(short_threshold))
 
         # 3. Define trading timings
@@ -137,6 +137,8 @@ class ForecastingTrader:
                                      'spread(t)': spread_test.values,
                                      'predicted_change(%)': predictions_pct_change,
                                      'position_during_day': numUnits.shift(1).fillna(0).values[lookback:],
+                                     'Y':Y[lookback:],
+                                     'X':X[lookback:],
                                      'trading_days': trading_durations[lookback:],
                                      'ret_with_costs': ret_with_costs[lookback:],
                                      'predicted_direction': pd.cut(predictions_pct_change, bins, labels=names),
@@ -306,9 +308,10 @@ class ForecastingTrader:
                 # save keras model
                 nodes = model_config['hidden_nodes']
                 nodes_name = str(nodes[0]) + '*2_' if len(nodes) > 1 else str(nodes[0])
-                model.save('../rnn_models/keras_models/models_n_in-' + str(
-                    model_config['n_in']) + '_hidden_nodes-' + nodes_name +
-                           '_{}_{}'.format(pair[0], pair[1]) + '.h5')  # creates a HDF5 file 'my_model.h5'
+                #model.save('/content/drive/rnn_models/keras_models/models_n_in-' + str(
+                #    model_config['n_in']) + '_hidden_nodes-' + nodes_name +
+                #           '_{}_{}'.format(pair[0], pair[1]) + '.h5')  # creates a HDF5 file 'my_model.h5'
+
                 del model  # deletes the existing model
 
             # transform predictions to series
@@ -429,15 +432,24 @@ class ForecastingTrader:
 
         # fit model
         history = model.fit(X, y, epochs=epochs, verbose=1, validation_data=(X_val, y_val), shuffle=False,
-                            batch_size=batch_size, callbacks=[es])#,stateful=True
+                            batch_size=batch_size, callbacks=[es])
 
-        train_score = model.evaluate(X, y, verbose=0)
-        val_score = model.evaluate(X_val, y_val, verbose=0)
-        test_score = model.evaluate(X_test, y_test, verbose=0)
-        score = {'train': train_score, 'val': val_score, 'test': test_score}
+        # scores
+        if len(history.history['loss']) < 500:
+            train_score = [min(history.history['loss']), min(history.history['mean_absolute_error'])]
+            val_score = [min(history.history['val_loss']),min(history.history['val_mean_absolute_error'])]
+        else:
+            train_score = [history.history['loss'][-1], history.history['mean_absolute_error'][-1]]
+            val_score = [history.history['val_loss'][-1], history.history['val_mean_absolute_error'][-1]]
 
-        predictions_validation = model.predict(X_val)
-        predictions_test = model.predict(X_test)
+        score = {'train': train_score, 'val': val_score}
+
+        # removed test score calculation to save time
+        #test_score = model.evaluate(X_test, y_test, verbose=1)
+        # , 'test': test_score}
+
+        predictions_validation = model.predict(X_val, verbose=1)
+        predictions_test = model.predict(X_test, verbose=1)
 
         print('------------------------------------------------------------')
         print('The mse train loss is: ', train_score[0])

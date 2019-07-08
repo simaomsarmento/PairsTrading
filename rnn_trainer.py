@@ -21,8 +21,7 @@ data_processor = class_DataProcessor.DataProcessor()
 
 ################################# READ PRICES AND PAIRS #################################
 # read prices
-#df_prices = pd.read_pickle('../data/etfs/pickle/commodity_ETFs_intraday_interpolated_screened_no_outliers.pickle')
-df_prices = pd.read_pickle('/content/drive/My Drive/PairsTrading/2009-2019/commodity_ETFs_intraday_interpolated_screened_no_outliers.pickle')
+df_prices = pd.read_pickle('/content/drive/PairsTrading/2009-2019/commodity_ETFs_intraday_interpolated_screened_no_outliers.pickle')
 # split data in training and test
 df_prices_train, df_prices_test = data_processor.split_data(df_prices,
                                                             ('01-01-2009',
@@ -31,8 +30,7 @@ df_prices_train, df_prices_test = data_processor.split_data(df_prices,
                                                              '31-12-2018'),
                                                             remove_nan=True)
 # load pairs
-#with open('../data/etfs/pickle/2009-2019/pairs_unsupervised_learning_intraday.pickle', 'rb') as handle:
-with open('/content/drive/My Drive/PairsTrading/2009-2019/pairs_unsupervised_learning_intraday.pickle', 'rb') as handle:
+with open('/content/drive/PairsTrading/2009-2019/pairs_unsupervised_learning_intraday.pickle', 'rb') as handle:
     pairs = pickle.load(handle)
 n_years_train = round(len(df_prices_train) / (240 * 78))
 print('Loaded {} pairs!'.format(len(pairs)))
@@ -46,18 +44,17 @@ for i, configuration in enumerate(combinations):
 
     model_config = {"n_in": configuration[0],
                     "n_out": 1,
-                    "epochs": 1,#500,
+                    "epochs": 500,
                     "hidden_nodes": configuration[1],
                     "loss_fct": "mse",
                     "optimizer": "adam",
-                    "batch_size": 512,
+                    "batch_size": 1024,
                     "train_val_split": '2017-01-01',
                     "test_init": '2018-01-01'}
     models = forecasting_trader.train_models(pairs, model_config, model_type='rnn')
 
     # save models for this configuration
-    #with open('../rnn_models/models_n_in-' + str(configuration[0]) + '_hidden_nodes-' + hidden_nodes_names[i] + '.pkl', 'wb') as f:
-    with open('rnn_models/models_n_in-' + str(configuration[0]) + '_hidden_nodes-' + hidden_nodes_names[i] +
+    with open('/content/drive/PairsTrading/rnn_models/models_n_in-' + str(configuration[0]) + '_hidden_nodes-' + hidden_nodes_names[i] +
               '.pkl','wb') as f:
         pickle.dump(models, f)
 

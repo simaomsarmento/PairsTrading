@@ -6,6 +6,7 @@ import statsmodels.api as sm
 from statsmodels.tsa.stattools import coint, adfuller
 
 from sklearn.cluster import DBSCAN
+from sklearn.cluster import OPTICS, cluster_optics_dbscan
 from sklearn.decomposition import PCA
 from sklearn import preprocessing
 from sklearn.metrics import silhouette_score
@@ -303,6 +304,33 @@ class SeriesAnalyser:
         #print('New shape: ', X.shape)
 
         return X, explained_variance
+
+    def apply_OPTICS(self, X, df_returns, min_samples, max_eps=2, xi=0.05, cluster_method='xi'):
+        """
+
+        :param X:
+        :param df_returns:
+        :param min_samples:
+        :param max_eps:
+        :param xi:
+        :param eps:
+        :return:
+        """
+        clf = OPTICS(min_samples=min_samples, max_eps=max_eps, xi=xi, metric='euclidean', cluster_method=cluster_method)
+        print(clf)
+
+        clf.fit(X)
+        labels = clf.labels_
+        n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
+        print("Clusters discovered: %d" % n_clusters_)
+
+        clustered_series_all = pd.Series(index=df_returns.columns, data=labels.flatten())
+        clustered_series = clustered_series_all[clustered_series_all != -1]
+
+        counts = clustered_series.value_counts()
+        print("Pairs to evaluate: %d" % (counts * (counts - 1) / 2).sum())
+
+        return clustered_series_all, clustered_series, counts, clf
 
     def apply_DBSCAN(self, eps, min_samples, X, df_returns):
         """
