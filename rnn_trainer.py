@@ -30,21 +30,21 @@ df_prices_train, df_prices_test = data_processor.split_data(df_prices,
                                                              '31-12-2018'),
                                                             remove_nan=True)
 # load pairs
-with open('/content/drive/PairsTrading/2009-2019/pairs_unsupervised_learning_intraday.pickle', 'rb') as handle:
+with open('/content/drive/PairsTrading/2009-2019/pairs_unsupervised_learning_optical_intraday.pickle', 'rb') as handle:
     pairs = pickle.load(handle)
 n_years_train = round(len(df_prices_train) / (240 * 78))
 print('Loaded {} pairs!'.format(len(pairs)))
 
 ################################# TRAIN MODELS #################################
 
-combinations = [(100, [50]), (100, [100])]
-hidden_nodes_names = ['50', '100']
+combinations = [(78, [10]), (12, [50]), (78, [50])]#(12, [10]),
+hidden_nodes_names = ['10', '50', '50'] #(12, [10]),
 
 for i, configuration in enumerate(combinations):
 
     model_config = {"n_in": configuration[0],
                     "n_out": 1,
-                    "epochs": 500,
+                    "epochs": 250,
                     "hidden_nodes": configuration[1],
                     "loss_fct": "mse",
                     "optimizer": "adam",

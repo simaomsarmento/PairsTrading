@@ -17,14 +17,11 @@ import matplotlib.pyplot as plt
 
 import class_Trader
 
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import StandardScaler
 
 # Import keras
 from keras.models import Sequential
-from keras.layers import Dense, Flatten, GRU, Dropout
-from keras.optimizers import SGD, Adam
-from keras.layers.convolutional import Conv1D
-from keras.layers.convolutional import MaxPooling1D
+from keras.layers import Dense, Flatten, GRU, Dropout, LSTM
 from keras.callbacks import EarlyStopping
 # just set the seed for the random number generator
 
@@ -63,18 +60,25 @@ class ForecastingTrader:
         # we want to see the pct change of the prediction compared
         # to the true value but the previous instant time, because we
         # are interested in seeing the temporal % change
+
         predictions_pct_change = (((predictions - spread_test.shift(lag)) / abs(spread_test.shift(lag))) * 100).fillna(
             0)
+        # spread_test_std = np.std(spread_test)
+        # predictions_pct_change = (((predictions - spread_test.shift(lag)) / spread_test_std) * 100).fillna(0)
 
         # 2. Calculate trading thresholds
         spread_train_pct_change = ((spread_train - spread_train.shift(lag)) / abs(spread_train.shift(lag))) * 100
+        # spread_train_std = np.std(spread_train)
+        # spread_train_pct_change = ((spread_train - spread_train.shift(lag)) / spread_train_std) * 100
         positive_changes = spread_train_pct_change[spread_train_pct_change > 0]
         negative_changes = spread_train_pct_change[spread_train_pct_change < 0]
         long_threshold = max(positive_changes.quantile(q=high_quantile, interpolation='linear'), 5)
         long_threshold = min(long_threshold, 50)
+        #long_threshold = positive_changes.quantile(q=high_quantile, interpolation='linear')
         print('Long threshold: {:.2f}'.format(long_threshold))
         short_threshold = min(negative_changes.quantile(q=low_quantile, interpolation='linear'), -5)
         short_threshold = max(short_threshold, -50)
+        #short_threshold = negative_changes.quantile(q=low_quantile, interpolation='linear')
         print('Short threshold: {:.2f}'.format(short_threshold))
 
         # 3. Define trading timings
@@ -146,7 +150,109 @@ class ForecastingTrader:
                                      },
                                index=spread_test.index)
 
-        return ret_with_costs, cum_ret_with_costs, summary
+        return ret_with_costs, cum_ret_with_costs, summary, balance_summary
+
+    def spread_trading(self, X, Y, spread_test, spread_train, beta, predictions, lag, low_quantile=0.10,
+                       high_quantile=0.90):
+        """
+        This function will set the trading positions based on the forecasted spread.
+        For each day, the function compares the predicted spread for that day with the
+        true value of the spread in tha day before, giving the predicted spread pct change.
+        In case it is larger than the threshold, a position is entered.
+        Note: because a position entered in day n it is only accounted for on the day after,
+        we shift the entered positions.
+        : predictions: predictions should not be standardized, but with regular mean and variance.
+        """
+        # 1. Get predictions pct_change
+        # we want to see the pct change of the prediction compared
+        # to the true value but the previous instant time, because we
+        # are interested in seeing the temporal % change
+
+        spread_test_std = np.std(spread_test)
+        predictions_pct_change = (((predictions - predictions.shift(lag)) / spread_test_std) * 100).fillna(0)
+
+        # 2. Calculate trading thresholds
+        spread_train_std = np.std(spread_train)
+        spread_train_pct_change = ((spread_train - spread_train.shift(lag)) / spread_train_std) * 100
+        positive_changes = spread_train_pct_change[spread_train_pct_change > 0]
+        negative_changes = spread_train_pct_change[spread_train_pct_change < 0]
+        long_threshold = positive_changes.quantile(q=high_quantile, interpolation='linear')
+        print('Long threshold: {:.2f}'.format(long_threshold))
+        short_threshold = negative_changes.quantile(q=low_quantile, interpolation='linear')
+        print('Short threshold: {:.2f}'.format(short_threshold))
+
+        # 3. Define trading timings
+        # Note: If we want to enter a position at the beginning of day N,
+        # because of the way pnl is calculated the position is entered
+        # in the previous day.
+        # Example: In day 23 the percentage change is 55% (wrt day 22). If we were to enter the
+        # position in day 23, the following code would not consider the gains during day 23, even if we had
+        # set the position in the morning. (it conly considers the gains for the next days)
+        # Thus, as a workaoround, we enter the position at day 22 (at night), and it considers the gains for day 23
+        numUnits = pd.Series(data=[0.] * len(spread_test), index=spread_test.index, name='numUnits')
+        longsEntry = predictions_pct_change > long_threshold
+        longsEntry = longsEntry.shift(-1).fillna(False)
+        numUnits[longsEntry] = 1.
+        shortsEntry = predictions_pct_change < short_threshold
+        shortsEntry = shortsEntry.shift(-1).fillna(False)
+        numUnits[shortsEntry] = -1.
+
+        # ffill if applicable
+        """
+        if lag == 1:
+            pct_change_from_previous = predictions_pct_change
+        else:
+            pct_change_from_previous = predictions_pct_change = (((predictions - spread_test.shift(1)) /
+                                                                  abs(spread_test.shift(1))) * 100).fillna(0)
+        for i in range(1, len(numUnits) - 1):
+            if numUnits[i] != 0:
+                continue
+            else:
+                if numUnits[i - 1] == 0:
+                    continue
+                elif numUnits[i - 1] == 1.:
+                    if pct_change_from_previous[i + 1] > 0:
+                        numUnits[i] = 1
+                        continue
+                elif numUnits[i - 1] == -1.:
+                    if pct_change_from_previous[i + 1] < 0:
+                        numUnits[i] = -1.
+                        continue
+        """
+
+        # 4. Calculate P&L and Returns
+        trader = class_Trader.Trader()
+
+        # concatenate for positions with not enough data to be predicted
+        lookback = len(Y)-len(spread_test)
+        numUnits_not_predicted = pd.Series(data=[0.] * lookback, index=Y.index[:lookback])
+        numUnits = pd.concat([numUnits_not_predicted, numUnits], axis=0)
+        numUnits.name = 'numUnits'
+        # add trade durations
+        numUnits_df = pd.DataFrame(numUnits, index=Y.index)
+        numUnits_df = numUnits_df.rename(columns={"positions": "numUnits"})
+        trading_durations = trader.add_trading_duration(numUnits_df)
+        # calculate balance
+        balance_summary = trader.calculate_balance(Y, X, beta, numUnits.shift(1).fillna(0), trading_durations)
+
+        # summarize
+        ret_with_costs, cum_ret_with_costs = balance_summary.returns, (balance_summary.account_balance-1)
+        bins = [-np.inf, -0.00000001, 0.00000001, np.inf]
+        names = ['-1', '0', '1']
+        summary = pd.DataFrame(data={'prediction(t)': predictions.values,
+                                     'spread(t)': spread_test.values,
+                                     'predicted_change(%)': predictions_pct_change,
+                                     'position_during_day': numUnits.shift(1).fillna(0).values[lookback:],
+                                     'Y':Y[lookback:],
+                                     'X':X[lookback:],
+                                     'trading_days': trading_durations[lookback:],
+                                     'ret_with_costs': ret_with_costs[lookback:],
+                                     'predicted_direction': pd.cut(predictions_pct_change, bins, labels=names),
+                                     'true_direction': pd.cut(spread_test.diff(), bins, labels=names)
+                                     },
+                               index=spread_test.index)
+
+        return ret_with_costs, cum_ret_with_costs, summary, balance_summary
 
     def series_to_supervised(self, data, index=None, n_in=1, n_out=1, dropnan=True):
         """
@@ -207,10 +313,7 @@ class ForecastingTrader:
         """
         train_val_split = model_config['train_val_split']
 
-        # save data form original spread
-        #standardization_dict = {'mean': spread[:train_val_split].mean(), 'std': np.std(spread[:train_val_split])}
-        #spread = (spread - standardization_dict['mean']) / standardization_dict['std']
-        scaler = MinMaxScaler(feature_range=(0, 1))
+        scaler = StandardScaler()
         spread_norm = scaler.fit_transform(spread.values.reshape(spread.shape[0], 1))
         spread_norm = pd.Series(data=spread_norm.flatten(), index=spread.index)
         forecasting_data = self.series_to_supervised(list(spread_norm), spread.index, model_config['n_in'],
@@ -236,7 +339,6 @@ class ForecastingTrader:
         """
         """
         # normalize spread
-        #spread = (spread - standardization_dict['mean']) / standardization_dict['std']
         spread_norm = scaler.transform(spread.values.reshape(spread.shape[0], 1))
         spread_norm = pd.Series(data=spread_norm.flatten(), index=spread.index)
         forecasting_data = self.series_to_supervised(list(spread_norm), spread.index, model_config['n_in'],
@@ -410,14 +512,14 @@ class ForecastingTrader:
         model = Sequential()
         # add GRU layers
         if len(hidden_nodes) == 1:
-            model.add(GRU(hidden_nodes[0], activation='relu', input_shape=(X.shape[1], 1)))
+            model.add(LSTM(hidden_nodes[0], activation='relu', input_shape=(X.shape[1], 1)))
         else:
             for i in range(len(hidden_nodes)-1):
                 if i == 0:
-                    model.add(GRU(hidden_nodes[0], activation='relu', input_shape=(X.shape[1], 1),
+                    model.add(LSTM(hidden_nodes[0], activation='relu', input_shape=(X.shape[1], 1),
                                   return_sequences=True))
                 else:
-                    model.add(GRU(hidden_nodes[i], activation='relu', return_sequences=True))
+                    model.add(LSTM(hidden_nodes[i], activation='relu', return_sequences=True))
                 # add dropout in between
                 model.add(Dropout(0.2))
 
@@ -507,12 +609,13 @@ class ForecastingTrader:
             model = pickle.load(f)
 
         model_cumret, model_sharpe_ratio = list(), list()
-        summaries = list()
+        balance_summaries, summaries = list(), list()
         for pair_i in range(len(model) - 1):
-            # print('\nPair loaded: {}_{}:'.format(model[pair_i]['leg1'], model[pair_i]['leg2']))
-            # print('Check pairs: {}_{}.'.format(pairs[pair_i][0], pairs[pair_i][1]))
+            print('\nPair loaded: {}_{}:'.format(model[pair_i]['leg1'], model[pair_i]['leg2']))
+            print('Check pairs: {}_{}.'.format(pairs[pair_i][0], pairs[pair_i][1]))
             predictions = model[pair_i]['predictions_val']
-            ret, cumret, summary = self.forecast_spread_trading(
+
+            ret, cumret, summary, balance_summary = self.forecast_spread_trading(
                                                             X=pairs[pair_i][2]['X_train'][train_val_split:],
                                                             Y=pairs[pair_i][2]['Y_train'][train_val_split:],
                                                             spread_test=pairs[pair_i][2]['spread'][train_val_split:],
@@ -522,6 +625,15 @@ class ForecastingTrader:
                                                             lag=lag,
                                                             low_quantile=low_quantile,
                                                             high_quantile=high_quantile)
+            """
+            ret, cumret, summary, balance_summary = self.spread_trading(X=pairs[pair_i][2]['X_train'][train_val_split:],
+                                                      Y=pairs[pair_i][2]['Y_train'][train_val_split:],
+                                                      spread_test=pairs[pair_i][2]['spread'][train_val_split:],
+                                                      spread_train=pairs[pair_i][2]['spread'][:train_val_split],
+                                                      beta=pairs[pair_i][2]['coint_coef'],
+                                                      predictions=predictions,
+                                                      lag=lag)
+            """
             print('Accumulated return: {:.2f}%'.format(cumret[-1] * 100))
 
             trader = class_Trader.Trader()
@@ -534,11 +646,12 @@ class ForecastingTrader:
             model_cumret.append(cumret[-1] * 100)
             model_sharpe_ratio.append(sharpe_ratio)
             summaries.append(summary)
+            balance_summaries.append(balance_summary)
 
         print('\nModel mean ROI: {:.2f}%'.format(np.mean(model_cumret)))
         print('Model mean Sharpe Ratio: {:.2f}'.format(np.mean(model_sharpe_ratio)))
 
-        return model, model_cumret, summaries
+        return model, model_cumret, summaries, balance_summaries
 
     def test_specific_model(self, n_in, hidden_nodes, pairs, path, train_test_split='2018-01-01', lag=1,
                             low_quantile=0.10, high_quantile=0.90, profitable_pairs_indices=None):
@@ -554,10 +667,10 @@ class ForecastingTrader:
         for pair_i in range(len(model) - 1):
             if pair_i in profitable_pairs_indices:
                 print('\nPair loaded: {}_{}:'.format(model[pair_i]['leg1'], model[pair_i]['leg2']))
-                #print('Check pairs: {}_{}.'.format(pairs[pair_i][0], pairs[pair_i][1]))
+                print('Check pairs: {}_{}.'.format(pairs[pair_i][0], pairs[pair_i][1]))
                 predictions = model[pair_i]['predictions_test']
                 spread_test = pairs[pair_i][2]['Y_test'] - pairs[pair_i][2]['coint_coef'] * pairs[pair_i][2]['X_test']
-                ret, cumret, summary = self.forecast_spread_trading(
+                ret, cumret, summary, _ = self.forecast_spread_trading(
                                                             X=pairs[pair_i][2]['X_test'],
                                                             Y=pairs[pair_i][2]['Y_test'],
                                                             spread_test=spread_test[-len(predictions):],
