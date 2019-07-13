@@ -80,7 +80,8 @@ class Trader:
 
         return zscore, rolling_beta
 
-    def threshold_strategy(self, y, x, beta, entry_level=1.0, exit_level=1.0, stabilizing_threshold=5):
+    def threshold_strategy(self, y, x, beta, entry_level=1.0, exit_level=1.0, stabilizing_threshold=5,
+                           predictions=None):
         """
         This function implements a threshold filter strategy with a fixed beta, found from cointegration test.
         :param y:
@@ -120,8 +121,14 @@ class Trader:
         num_units_short = num_units_short.fillna(method='ffill')
 
         num_units = num_units_long + num_units_short
-
         num_units = pd.Series(data=num_units.values, index=y.index, name='numUnits')
+
+        if predictions is not None:
+            df = pd.DataFrame({'units': num_units.shift(1).fillna(0), 'predictions': predictions,
+                               'predictions_change': predictions.diff().fillna(0)})
+            df = self.update_positions(df, 'predictions_change', 0)
+            num_units = df.units.shift(-1).fillna(0)
+            num_units.name = 'numUnits'
 
         # position durations
         trading_durations = self.add_trading_duration(pd.DataFrame(num_units, index=y.index))
@@ -139,6 +146,7 @@ class Trader:
                              (balance_summary.account_balance, 'account_balance'),
                              (balance_summary.returns, 'returns'),
                              (position_ret, 'position_return'),
+                             (predictions.diff().fillna(0), 'prediction_change'),
                              (y, y.name),
                              (x, x.name),
                              (pd.Series(norm_spread, index=y.index), 'norm_spread'),
@@ -163,7 +171,7 @@ class Trader:
         return summary, (sharpe_no_costs, sharpe_w_costs), balance_summary
 
     def apply_trading_strategy(self, pairs, strategy='fixed_beta', entry_multiplier=1, exit_multiplier=0,
-                               test_mode=False, train_val_split='2017-01-01'):
+                               test_mode=False, ai_support=False, train_val_split='2017-01-01'):
         """
         This function calls the kalman filter implementation for every pair.
         :param pairs: list with pairs identified in the training set information
@@ -191,9 +199,15 @@ class Trader:
                 x = pair_info['X_train'][train_val_split:]
 
             if strategy == 'fixed_beta':
+                if ai_support:
+                    predictions = pair[2]['predictions']
+                else:
+                    predictions = None
+
                 summary, sharpe, balance_summary = self.threshold_strategy(y=y, x=x, beta=pair_info['coint_coef'],
-                                                                   entry_level=entry_multiplier,
-                                                                   exit_level=exit_multiplier)
+                                                                           entry_level=entry_multiplier,
+                                                                           exit_level=exit_multiplier,
+                                                                           predictions=predictions)
                 # no costs
                 cum_returns.append((np.cumprod(1 + summary.position_return) - 1).iloc[-1] * 100)
                 sharpe_results.append(sharpe[0])
@@ -589,12 +603,13 @@ class Trader:
                     previous_unit = row['units']
                     continue  # simply close trade, nothing to verify
                 else:
-                    if row[attribute] <= threshold:  # if criteria is met, continue
+                    if (row[attribute] <= 0.1 and row['units'] < 0) or \
+                       (row[attribute] > -0.1 and row['units'] > 0): # if criteria is met, continue
                         previous_unit = row['units']
                         continue
-                    elif row[attribute] > threshold:  # if criteria is not met, update row
+                    else:  # if criteria is not met, update row
                         df.loc[index, 'units'] = 0
-                        previous_unit = row['units']
+                        previous_unit = 0
                         continue
 
         return df
