@@ -48,7 +48,7 @@ for input_dim in n_in_set:
                         "epochs": 500,
                         "hidden_nodes": hidden_nodes,
                         "loss_fct": "mse",
-                        "optimizer": "adam",
+                        "optimizer": "rmsprop",
                         "batch_size": 512,
                         "train_val_split": '2017-01-01',
                         "test_init": '2018-01-01'}

@@ -37,25 +37,25 @@ print('Loaded {} pairs!'.format(len(pairs)))
 
 ################################# TRAIN MODELS #################################
 
-combinations = [(24, [10])]
-hidden_nodes_names = ['10']
+combinations = [(24, [10, 10])]
+hidden_nodes_names = ['10_10']
 
 for i, configuration in enumerate(combinations):
 
     model_config = {"n_in": configuration[0],
-                    "n_out": 1,
-                    "epochs": 250,
+                    "n_out": 2,
+                    "epochs": 1,#250,
                     "hidden_nodes": configuration[1],
                     "loss_fct": "mse",
                     "optimizer": "rmsprop",
                     "batch_size": 512,
                     "train_val_split": '2017-01-01',
                     "test_init": '2018-01-01'}
-    models = forecasting_trader.train_models(pairs, model_config, model_type='rnn')
+    models = forecasting_trader.train_models(pairs, model_config, model_type='encoder_decoder')
 
     # save models for this configuration
-    with open('/content/drive/PairsTrading/rnn_models/models_n_in-' + str(configuration[0]) + '_hidden_nodes-' + hidden_nodes_names[i] +
-              '.pkl','wb') as f:
+    with open('/content/drive/PairsTrading/encoder_decoder/models_n_in-' + str(configuration[0]) + '_hidden_nodes-' +
+              hidden_nodes_names[i] + '.pkl','wb') as f:
         pickle.dump(models, f)
 
 gc.collect()
