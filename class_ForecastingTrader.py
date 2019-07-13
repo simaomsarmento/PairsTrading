@@ -385,8 +385,8 @@ class ForecastingTrader:
             X_series_test = forecasting_data.drop(columns='var1(t)')
             y_series_test = forecasting_data['var1(t)']
         elif model_config['n_out'] == 2:
-            X_series_test = forecasting_data_test.drop(columns=['var1(t)', 'var1(t+1)'])
-            y_series_test = forecasting_data_test[['var1(t)', 'var1(t+1)']]
+            X_series_test = forecasting_data.drop(columns=['var1(t)', 'var1(t+1)'])
+            y_series_test = forecasting_data[['var1(t)', 'var1(t+1)']]
 
         X_test = X_series_test.values
         y_test = y_series_test.values

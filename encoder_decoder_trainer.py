@@ -37,14 +37,14 @@ print('Loaded {} pairs!'.format(len(pairs)))
 
 ################################# TRAIN MODELS #################################
 
-combinations = [(24, [10, 10])]
-hidden_nodes_names = ['10_10']
+combinations = [(24, [10, 5])]
+hidden_nodes_names = ['10_5']
 
 for i, configuration in enumerate(combinations):
 
     model_config = {"n_in": configuration[0],
                     "n_out": 2,
-                    "epochs": 1,#250,
+                    "epochs": 250,
                     "hidden_nodes": configuration[1],
                     "loss_fct": "mse",
                     "optimizer": "rmsprop",
