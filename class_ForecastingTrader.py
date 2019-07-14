@@ -48,7 +48,7 @@ class ForecastingTrader:
         return predictions * spread_std + spread_mean
 
     def forecast_spread_trading(self, X, Y, spread_test, spread_train, beta, predictions, lag,
-                                low_quantile=0.15, high_quantile=0.85):
+                                low_quantile=0.15, high_quantile=0.85, multistep=0):
         """
         This function will set the trading positions based on the forecasted spread.
         For each day, the function compares the predicted spread for that day with the
@@ -74,11 +74,12 @@ class ForecastingTrader:
         # spread_train_pct_change = ((spread_train - spread_train.shift(lag)) / spread_train_std) * 100
         positive_changes = spread_train_pct_change[spread_train_pct_change > 0]
         negative_changes = spread_train_pct_change[spread_train_pct_change < 0]
-        long_threshold = max(positive_changes.quantile(q=high_quantile, interpolation='linear'), 5)
-        long_threshold = min(long_threshold, 50)
+        long_threshold = max(positive_changes.quantile(q=high_quantile, interpolation='linear'), 2)
         # long_threshold = positive_changes.quantile(q=high_quantile, interpolation='linear')
+        long_threshold = min(long_threshold, 50)
         print('Long threshold: {:.2f}'.format(long_threshold))
-        short_threshold = min(negative_changes.quantile(q=low_quantile, interpolation='linear'), -5)
+        short_threshold = min(negative_changes.quantile(q=low_quantile, interpolation='linear'), -2)
+        #short_threshold = negative_changes.quantile(q=low_quantile, interpolation='linear')
         short_threshold = max(short_threshold, -50)
         # short_threshold = negative_changes.quantile(q=low_quantile, interpolation='linear')
         print('Short threshold: {:.2f}'.format(short_threshold))
@@ -706,7 +707,7 @@ class ForecastingTrader:
         return (best_model, best_score)
 
     def run_specific_model(self, n_in, hidden_nodes, pairs, path='models/', train_val_split='2017-01-01', lag=1,
-                           low_quantile=0.10, high_quantile=0.90):
+                           low_quantile=0.10, high_quantile=0.90, multistep=0):
 
         nodes_name = str(hidden_nodes[0]) + '*2' if len(hidden_nodes) > 1 else str(hidden_nodes[0])
         file_name = 'models_n_in-' + str(n_in) + '_hidden_nodes-' + nodes_name + '.pkl'
@@ -730,7 +731,8 @@ class ForecastingTrader:
                                                             predictions=predictions,
                                                             lag=lag,
                                                             low_quantile=low_quantile,
-                                                            high_quantile=high_quantile)
+                                                            high_quantile=high_quantile,
+                                                            multistep=multistep)
             """
             ret, cumret, summary, balance_summary = self.spread_trading(
                                                             X=pairs[pair_i][2]['X_train'][train_val_split:],
@@ -774,7 +776,7 @@ class ForecastingTrader:
             model = pickle.load(f)
 
         model_cumret, model_sharpe_ratio = list(), list()
-        summaries = list()
+        summaries, balance_summaries = list(), list()
         for pair_i in range(len(model) - 1):
             if pair_i in profitable_pairs_indices:
                 print('\nPair loaded: {}_{}:'.format(model[pair_i]['leg1'], model[pair_i]['leg2']))
@@ -782,7 +784,7 @@ class ForecastingTrader:
                 predictions = model[pair_i]['predictions_test']
                 spread_test = pairs[pair_i][2]['Y_test'] - pairs[pair_i][2]['coint_coef'] * pairs[pair_i][2]['X_test']
 
-                ret, cumret, summary, _ = self.forecast_spread_trading(
+                ret, cumret, summary, balance_summary = self.forecast_spread_trading(
                                                             X=pairs[pair_i][2]['X_test'],
                                                             Y=pairs[pair_i][2]['Y_test'],
                                                             spread_test=spread_test[-len(predictions):],
@@ -816,10 +818,11 @@ class ForecastingTrader:
                 model_cumret.append(cumret[-1] * 100)
                 model_sharpe_ratio.append(sharpe_ratio)
                 summaries.append(summary)
+                balance_summaries.append(balance_summary)
 
         print('\nModel mean ROI on test set: {:.2f}%'.format(np.mean(model_cumret)))
         print('Model mean Sharpe Ratio on test set: {:.2f}'.format(np.mean(model_sharpe_ratio)))
 
-        return model, model_cumret, summaries
+        return model, model_cumret, summaries, balance_summaries
 
 

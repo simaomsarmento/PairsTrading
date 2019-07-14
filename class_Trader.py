@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import sys
 import statsmodels.api as sm
+import matplotlib.pyplot as plt
 
 # just set the seed for the random number generator
 np.random.seed(107)
@@ -129,6 +130,8 @@ class Trader:
             df = self.update_positions(df, 'predictions_change', 0)
             num_units = df.units.shift(-1).fillna(0)
             num_units.name = 'numUnits'
+        else:
+            predictions = pd.Series(data=[0]*len(num_units), index=y.index)
 
         # position durations
         trading_durations = self.add_trading_duration(pd.DataFrame(num_units, index=y.index))
@@ -603,8 +606,8 @@ class Trader:
                     previous_unit = row['units']
                     continue  # simply close trade, nothing to verify
                 else:
-                    if (row[attribute] <= 0.1 and row['units'] < 0) or \
-                       (row[attribute] > -0.1 and row['units'] > 0): # if criteria is met, continue
+                    if (row[attribute] <= threshold and row['units'] < 0) or \
+                       (row[attribute] > threshold and row['units'] > 0): # if criteria is met, continue
                         previous_unit = row['units']
                         continue
                     else:  # if criteria is not met, update row
@@ -884,6 +887,21 @@ class Trader:
         sharpe_ratio = np.sqrt(time_in_market) * np.mean(daily_ret) / np.std(daily_ret)
 
         return sharpe_ratio
+
+    def calculate_maximum_drawdown(self, account_balance):
+
+        xs = np.asarray(account_balance.values)
+
+        i = np.argmax(np.maximum.accumulate(xs) - xs)  # end of the period
+        if i == 0:
+            plt.plot(xs)
+            return 0
+        else:
+            j = np.argmax(xs[:i])  # start of period
+            plt.plot(xs)
+            plt.plot([i, j], [xs[i], xs[j]], 'o', color='Red', markersize=10)
+
+        return (xs[i]-xs[j])/xs[j] * 100
 
     def calculate_position_returns(self, y, x, beta, positions):
         """
