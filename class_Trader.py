@@ -104,9 +104,7 @@ class Trader:
 
         num_units_long = pd.Series([np.nan for i in range(len(y))])
         num_units_short = pd.Series([np.nan for i in range(len(y))])
-        # initialize with zero
-        num_units_long[0] = 0.
-        num_units_short[0] = 0.
+
         # remove trades while the spread is stabilizing
         longs_entry[:stabilizing_threshold] = False
         longs_exit[:stabilizing_threshold] = False
@@ -115,10 +113,17 @@ class Trader:
 
         num_units_long[longs_entry] = 1.
         num_units_long[longs_exit] = 0
-        num_units_long = num_units_long.fillna(method='ffill')
-
         num_units_short[shorts_entry] = -1.
         num_units_short[shorts_exit] = 0
+        # shift to simulate delay in real life trading
+        # plase comment if no need to simulate delay
+        num_units_long = num_units_long.shift(1)
+        num_units_short = num_units_short.shift(1)
+        # initialize with zero
+        num_units_long[0] = 0.
+        num_units_short[0] = 0.
+        # finally, fill in between
+        num_units_long = num_units_long.fillna(method='ffill')
         num_units_short = num_units_short.fillna(method='ffill')
 
         num_units = num_units_long + num_units_short
@@ -189,6 +194,7 @@ class Trader:
         sharpe_results_with_costs = []
         cum_returns_with_costs = []
         performance = []  # aux variable to store pairs' record
+        print(' entry delay turned on.')
         for i, pair in enumerate(pairs):
             sys.stdout.write("\r"+'Pair: {}/{}'.format(i + 1, len(pairs)))
             sys.stdout.flush()
@@ -202,6 +208,7 @@ class Trader:
                 x = pair_info['X_train'][train_val_split:]
 
             if strategy == 'fixed_beta':
+
                 if ai_support:
                     predictions = pair[2]['predictions']
                 else:

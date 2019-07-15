@@ -62,16 +62,23 @@ class ForecastingTrader:
         # we want to see the pct change of the prediction compared
         # to the true value but the previous instant time, because we
         # are interested in seeing the temporal % change
-
-        predictions_pct_change = (((predictions - spread_test.shift(lag)) / abs(spread_test.shift(lag))) * 100).fillna(
-            0)
-        # spread_test_std = np.std(spread_test)
-        # predictions_pct_change = (((predictions - spread_test.shift(lag)) / spread_test_std) * 100).fillna(0)
+        if multistep == 0:
+            predictions_1 = predictions
+            predictions_2 = pd.Series(data=[0]*len(predictions), index=predictions.index)
+            predictions_pct_change = (((predictions_1 - spread_test.shift(lag)) /
+                                       abs(spread_test.shift(lag))) * 100).fillna(0)
+            # true_change = spread_test.diff().fillna(0)
+        else:
+            predictions_1, predictions_2 = predictions['t'], predictions['t+1']
+            predictions_pct_change = (((predictions_2 - spread_test.shift(lag)) /
+                                       abs(spread_test.shift(lag))) * 100).fillna(0)
+            # need to add last row and first row correspondingly
+            predictions_1 = predictions_1.append(pd.Series(data=predictions_2[-1], index=spread_test[-1:].index))
+            predictions_2 = pd.concat([pd.Series(data=predictions_1[0], index=predictions_1[:1].index), predictions_2])
 
         # 2. Calculate trading thresholds
-        spread_train_pct_change = ((spread_train - spread_train.shift(lag)) / abs(spread_train.shift(lag))) * 100
-        # spread_train_std = np.std(spread_train)
-        # spread_train_pct_change = ((spread_train - spread_train.shift(lag)) / spread_train_std) * 100
+        spread_train_pct_change = ((spread_train - spread_train.shift(lag+multistep)) /
+                                   abs(spread_train.shift(lag+multistep))) * 100
         positive_changes = spread_train_pct_change[spread_train_pct_change > 0]
         negative_changes = spread_train_pct_change[spread_train_pct_change < 0]
         long_threshold = max(positive_changes.quantile(q=high_quantile, interpolation='linear'), 2)
@@ -104,7 +111,7 @@ class ForecastingTrader:
         if lag == 1:
             pct_change_from_previous = predictions_pct_change
         else:
-            pct_change_from_previous = predictions_pct_change = (((predictions - spread_test.shift(1)) /
+            pct_change_from_previous = predictions_pct_change = (((predictions_1 - spread_test.shift(1)) /
                                                                   abs(spread_test.shift(1))) * 100).fillna(0)
         for i in range(1, len(numUnits) - 1):
             if numUnits[i] != 0:
@@ -140,7 +147,8 @@ class ForecastingTrader:
         ret_with_costs, cum_ret_with_costs = balance_summary.returns, (balance_summary.account_balance-1)
         bins = [-np.inf, -0.00000001, 0.00000001, np.inf]
         names = ['-1', '0', '1']
-        summary = pd.DataFrame(data={'prediction(t)': predictions.values,
+        summary = pd.DataFrame(data={'prediction(t)': predictions_1.values,
+                                     'prediction(t+1)': predictions_2.values,
                                      'spread(t)': spread_test.values,
                                      'predicted_change(%)': predictions_pct_change,
                                      'position_during_day': numUnits.shift(1).fillna(0).values[lookback:],
@@ -392,7 +400,7 @@ class ForecastingTrader:
         X_test = X_series_test.values
         y_test = y_series_test.values
 
-        return (X_test, y_test)
+        return (X_test, y_test), y_series_test
 
     def destandardize(self, predictions, spread_mean, spread_std):
         """
@@ -417,7 +425,7 @@ class ForecastingTrader:
             train_data, validation_data, y_series_val, scaler = self.prepare_train_data(spread, model_config)
             # prepare test data
             spread_test = pair[2]['Y_test']-pair[2]['coint_coef']*pair[2]['X_test']
-            test_data = self.prepare_test_data(spread_test, model_config, scaler)
+            test_data, y_series_test = self.prepare_test_data(spread_test, model_config, scaler)
 
             # train model and get predictions
             if model_type == 'mlp':
@@ -455,22 +463,23 @@ class ForecastingTrader:
                                                                            loss_fct=model_config['loss_fct'],
                                                                            batch_size=model_config['batch_size'])
 
-                predictions_val_aux, predictions_test_aux = list(), list()
-                for i in range(predictions_val.shape[1]):
-                    predictions_val_aux.append(scaler.inverse_transform(predictions_val[:, i, :]))
-                    predictions_test_aux.append(scaler.inverse_transform(predictions_test[:, i, :]))
+                # validation
+                predictions_val = pd.DataFrame({'t': predictions_val.reshape(predictions_val.shape[0],
+                                                                             predictions_val.shape[1])[:, 0],
+                                                't+1': predictions_val.reshape(predictions_val.shape[0],
+                                                                               predictions_val.shape[1])[:, 1]},
+                                               index=y_series_val.index)
+                predictions_val['t'] = scaler.inverse_transform(np.array(predictions_val['t']))
+                predictions_val['t+1'] = scaler.inverse_transform(np.array(predictions_val['t+1']))
 
-                predictions_val_aux = np.asarray(predictions_val_aux).reshape(predictions_val.shape[0],
-                                                                              predictions_val.shape[1], 1)
-                predictions_val = pd.DataFrame(data={'t': predictions_val_aux[:, 0, :].flatten(),
-                                                     't+1': predictions_val_aux[:, 1, :].flatten()},
-                                                     index=y_series_val.index)
-
-                predictions_test_aux = np.asarray(predictions_test_aux).reshape(predictions_test.shape[0],
-                                                                                predictions_test.shape[1], 1)
-                predictions_test = pd.DataFrame(data={'t': predictions_test_aux[:, 0, :].flatten(),
-                                                      't+1': predictions_test_aux[:, 1, :].flatten()},
-                                                      index=spread_test[-len(test_data[1]):].index)
+                # test
+                predictions_test = pd.DataFrame({'t': predictions_test.reshape(predictions_test.shape[0],
+                                                                               predictions_test.shape[1])[:, 0],
+                                                't+1': predictions_test.reshape(predictions_test.shape[0],
+                                                                                predictions_test.shape[1])[:, 1]},
+                                                index=y_series_test.index)
+                predictions_test['t'] = scaler.inverse_transform(np.array(predictions_test['t']))
+                predictions_test['t+1'] = scaler.inverse_transform(np.array(predictions_test['t+1']))
 
             # transform predictions to series
             if model_type != 'encoder_decoder':
@@ -707,9 +716,9 @@ class ForecastingTrader:
         return (best_model, best_score)
 
     def run_specific_model(self, n_in, hidden_nodes, pairs, path='models/', train_val_split='2017-01-01', lag=1,
-                           low_quantile=0.10, high_quantile=0.90, multistep=0):
+                           multistep=0, low_quantile=0.10, high_quantile=0.90):
 
-        nodes_name = str(hidden_nodes[0]) + '*2' if len(hidden_nodes) > 1 else str(hidden_nodes[0])
+        nodes_name = str(hidden_nodes[0]) + '_' + str(hidden_nodes[1]) if len(hidden_nodes) > 1 else str(hidden_nodes[0])
         file_name = 'models_n_in-' + str(n_in) + '_hidden_nodes-' + nodes_name + '.pkl'
 
         with open(path + file_name, 'rb') as f:
