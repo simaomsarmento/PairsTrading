@@ -776,9 +776,10 @@ class ForecastingTrader:
         return model, model_cumret, summaries, balance_summaries
 
     def test_specific_model(self, n_in, hidden_nodes, pairs, path, train_test_split='2018-01-01', lag=1,
-                            low_quantile=0.10, high_quantile=0.90, profitable_pairs_indices=None):
+                            low_quantile=0.10, high_quantile=0.90, multistep=0, profitable_pairs_indices=None):
 
-        nodes_name = str(hidden_nodes[0]) + '*2' if len(hidden_nodes) > 1 else str(hidden_nodes[0])
+        nodes_name = str(hidden_nodes[0]) + '_' + str(hidden_nodes[1]) if len(hidden_nodes) > 1 else str(
+            hidden_nodes[0])
         file_name = 'models_n_in-' + str(n_in) + '_hidden_nodes-' + nodes_name + '.pkl'
 
         with open(path + file_name, 'rb') as f:
@@ -796,13 +797,14 @@ class ForecastingTrader:
                 ret, cumret, summary, balance_summary = self.forecast_spread_trading(
                                                             X=pairs[pair_i][2]['X_test'],
                                                             Y=pairs[pair_i][2]['Y_test'],
-                                                            spread_test=spread_test[-len(predictions):],
+                                                            spread_test=spread_test[-len(predictions)-multistep:],
                                                             spread_train=pairs[pair_i][2]['spread'][:train_test_split],
                                                             beta=pairs[pair_i][2]['coint_coef'],
                                                             predictions=predictions,
                                                             lag=lag,
                                                             low_quantile=low_quantile,
-                                                            high_quantile=high_quantile)
+                                                            high_quantile=high_quantile,
+                                                            multistep=multistep)
                 """
                 ret, cumret, summary, _ = self.spread_trading(
                                                             X=pairs[pair_i][2]['X_test'],
