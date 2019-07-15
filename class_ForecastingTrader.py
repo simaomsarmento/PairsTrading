@@ -572,24 +572,24 @@ class ForecastingTrader:
 
         # define model
         model = Sequential()
-        he_init = he_normal(seed=None)
+        glorot_init = glorot_normal(seed=None)
         # add GRU layers
         if len(hidden_nodes) == 1:
-            model.add(LSTM(hidden_nodes[0], activation='relu', input_shape=(X.shape[1], 1), kernel_initializer=he_init))
+            model.add(LSTM(hidden_nodes[0], activation='relu', input_shape=(X.shape[1], 1), kernel_initializer=glorot_init))
         else:
             for i in range(len(hidden_nodes)-1):
                 if i == 0:
                     model.add(LSTM(hidden_nodes[0], activation='relu', input_shape=(X.shape[1], 1),
-                                  return_sequences=True, kernel_initializer=he_init))
+                                  return_sequences=True, kernel_initializer=glorot_init))
                 else:
                     model.add(LSTM(hidden_nodes[i], activation='relu', return_sequences=True,
-                                   kernel_initializer=he_init))
+                                   kernel_initializer=glorot_init))
                 # add dropout in between
                 model.add(Dropout(0.2))
 
-            model.add(GRU(hidden_nodes[-1], activation='relu', kernel_initializer=he_init)) # last layer does not return sequences
+            model.add(GRU(hidden_nodes[-1], activation='relu', kernel_initializer=glorot_init)) # last layer does not return sequences
         # add dense layer for output
-        model.add(Dense(1, kernel_initializer=he_init))
+        model.add(Dense(1, kernel_initializer=glorot_init))
         model.compile(optimizer=optimizer, loss=loss_fct, metrics=['mae'])
         model.summary()
 
@@ -639,12 +639,12 @@ class ForecastingTrader:
         y_test = test_data[1].reshape((test_data[1].shape[0], test_data[1].shape[1], 1))
 
         # define model
-        he_init = he_normal(seed=None)
+        glorot_init = glorot_normal(seed=None)
         model = Sequential()
-        model.add(LSTM(hidden_nodes[0], activation='relu', input_shape=(n_in, 1),  kernel_initializer=he_init))
+        model.add(LSTM(hidden_nodes[0], activation='relu', input_shape=(n_in, 1),  kernel_initializer=glorot_init))
         model.add(RepeatVector(n_out))
-        model.add(LSTM(hidden_nodes[1], activation='relu', return_sequences=True,  kernel_initializer=he_init))
-        model.add(TimeDistributed(Dense(1, kernel_initializer=he_init)))
+        model.add(LSTM(hidden_nodes[1], activation='relu', return_sequences=True,  kernel_initializer=glorot_init))
+        model.add(TimeDistributed(Dense(1, kernel_initializer=glorot_init)))
         model.compile(optimizer=optimizer, loss=loss_fct, metrics=['mae'])
         model.summary()
 
