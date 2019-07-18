@@ -279,7 +279,7 @@ class SeriesAnalyser:
 
         return zero_crossings
 
-    def apply_PCA(self, n_components, df, svd_solver='auto'):
+    def apply_PCA(self, n_components, df, svd_solver='auto', random_state=0):
         """
         This function applies Principal Component Analysis to the df given as
         parameter
@@ -295,13 +295,12 @@ class SeriesAnalyser:
                 print("ERROR: number of components larger than samples...")
                 exit()
 
-        pca = PCA(n_components=n_components, svd_solver=svd_solver)
+        pca = PCA(n_components=n_components, svd_solver=svd_solver, random_state=random_state)
         pca.fit(df)
         explained_variance = pca.explained_variance_
 
         # standardize
         X = preprocessing.StandardScaler().fit_transform(pca.components_.T)
-        #print('New shape: ', X.shape)
 
         return X, explained_variance
 
