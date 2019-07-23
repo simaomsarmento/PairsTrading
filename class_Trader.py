@@ -3,6 +3,7 @@ import pandas as pd
 import sys
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
+from datetime import timedelta
 
 # just set the seed for the random number generator
 np.random.seed(107)
@@ -116,7 +117,7 @@ class Trader:
         num_units_short[shorts_entry] = -1.
         num_units_short[shorts_exit] = 0
         # shift to simulate delay in real life trading
-        # plase comment if no need to simulate delay
+        # please comment if no need to simulate delay
         num_units_long = num_units_long.shift(1)
         num_units_short = num_units_short.shift(1)
         # initialize with zero
@@ -889,13 +890,61 @@ class Trader:
         :param ret: array containing returns per timestep
         :return: sharpe ratio
         """
+        rf = {2015: 0.0005, 2016: 0.0032, 2017: 0.0093, 2018: 0.0194}
         time_in_market = n_years * n_days
-        daily_ret = (ret+1).resample('D').prod() -1
-        sharpe_ratio = np.sqrt(time_in_market) * np.mean(daily_ret) / np.std(daily_ret)
+        daily_index = ret.resample('D').last().dropna().index
+        daily_ret = (ret + 1).resample('D').prod() - 1
+        # remove added days from resample
+        daily_ret = daily_ret.loc[daily_index]
+
+        annualized_ret = (np.cumprod(1 + ret) - 1)[-1]
+        year = ret.index[0].year
+        if year in rf.keys():
+            sharpe_ratio = (annualized_ret-rf[year]) / (np.std(daily_ret)*np.sqrt(time_in_market))
+        else:
+            print('Not considering risk-free rate')
+            sharpe_ratio = annualized_ret / (np.std(daily_ret)*np.sqrt(time_in_market))
+
+        return sharpe_ratio
+
+    def calculate_portfolio_sharpe_ratio(self, performance, pairs):
+        """
+        Calculates the sharpe ratio based on the account balance of the total portfolio
+
+        :param performance: df with summary statistics from strategy
+        :param pairs: list with pairs
+        :return: sharpe ratio
+        """
+        # calculate total daily account balance
+        total_account_balance = performance[0][1]['account_balance'].resample('D').last()
+        for index in range(1, len(pairs)):
+            total_account_balance = total_account_balance + \
+                                    performance[index][1]['account_balance'].resample('D').last()
+        total_account_balance = total_account_balance.dropna()
+        # add first day with total balance
+        total_account_balance = pd.Series(data=[len(pairs)],
+                                          index=[total_account_balance.index[0] - timedelta(days=1)]).append(
+            total_account_balance)
+
+        # calculate daily returns
+        portfolio_returns = total_account_balance.pct_change(1).fillna(0)
+
+        # calculate sharpe ratio
+        rf = {2015: 0.0005, 2016: 0.0032, 2017: 0.0093, 2018: 0.0194}
+        annualized_ret = (total_account_balance[-1]-len(pairs))/len(pairs)
+        year = total_account_balance.index[-1].year
+        if year in rf.keys():
+            sharpe_ratio = (annualized_ret - rf[year]) / (np.std(portfolio_returns) * np.sqrt(252))
+        else:
+            print('Not considering risk-free rate')
+            sharpe_ratio = annualized_ret / (np.std(portfolio_returns) * np.sqrt(252))
 
         return sharpe_ratio
 
     def calculate_maximum_drawdown(self, account_balance):
+        """
+        source: https://stackoverflow.com/questions/22607324/start-end-and-duration-of-maximum-drawdown-in-python
+        """
 
         xs = np.asarray(account_balance.values)
 
@@ -907,6 +956,9 @@ class Trader:
             j = np.argmax(xs[:i])  # start of period
             plt.plot(xs)
             plt.plot([i, j], [xs[i], xs[j]], 'o', color='Red', markersize=10)
+
+        #print(xs[i])
+        #print(xs[j])
 
         return (xs[i]-xs[j])/xs[j] * 100
 
@@ -1041,7 +1093,7 @@ class Trader:
         print('Average result: ', avg_sharpe_ratio)
 
         avg_total_roi = np.mean(cum_returns_filtered)
-        # print('avg_total_roi: ', avg_total_roi)
+        #print('avg_total_roi: ', avg_total_roi)
 
         avg_annual_roi = ((1 + (avg_total_roi / 100)) ** (1 / float(n_years)) - 1) * 100
         print('avg_annual_roi: ', avg_annual_roi)
