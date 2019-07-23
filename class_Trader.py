@@ -915,29 +915,31 @@ class Trader:
         :param pairs: list with pairs
         :return: sharpe ratio
         """
-        # calculate total daily account balance
-        total_account_balance = performance[0][1]['account_balance'].resample('D').last()
+        # calculate total daily account balance & df with returns
+        total_account_balance = performance[0][1]['account_balance'].resample('D').last().dropna()
+        portfolio_returns = total_account_balance.pct_change().fillna(0)
         for index in range(1, len(pairs)):
-            total_account_balance = total_account_balance + \
-                                    performance[index][1]['account_balance'].resample('D').last()
-        total_account_balance = total_account_balance.dropna()
+            pair_balance = performance[index][1]['account_balance'].resample('D').last().dropna()
+            total_account_balance = total_account_balance + pair_balance
+            portfolio_returns = pd.concat([portfolio_returns, pair_balance.pct_change().fillna(0)], axis=1)
+
         # add first day with total balance
         total_account_balance = pd.Series(data=[len(pairs)],
                                           index=[total_account_balance.index[0] - timedelta(days=1)]).append(
-            total_account_balance)
+                                          total_account_balance)
 
-        # calculate daily returns
-        portfolio_returns = total_account_balance.pct_change(1).fillna(0)
-
+        # calculate portfolio volatility
+        weights = np.array([1 / len(pairs)] * len(pairs))
+        vol = np.sqrt(np.dot(weights.T, np.dot(portfolio_returns.cov(), weights)))
         # calculate sharpe ratio
-        rf = {2015: 0.0005, 2016: 0.0032, 2017: 0.0093, 2018: 0.0194}
+        rf = {2015: 0.00053, 2016: 0.0032, 2017: 0.0093, 2018: 0.0194}
         annualized_ret = (total_account_balance[-1]-len(pairs))/len(pairs)
         year = total_account_balance.index[-1].year
         if year in rf.keys():
-            sharpe_ratio = (annualized_ret - rf[year]) / (np.std(portfolio_returns) * np.sqrt(252))
+            sharpe_ratio = (annualized_ret - rf[year]) / (vol*np.sqrt(252))
         else:
             print('Not considering risk-free rate')
-            sharpe_ratio = annualized_ret / (np.std(portfolio_returns) * np.sqrt(252))
+            sharpe_ratio = annualized_ret / (vol*np.sqrt(252))
 
         return sharpe_ratio
 
