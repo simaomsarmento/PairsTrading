@@ -25,6 +25,8 @@ from keras.layers import Dense, Flatten, GRU, Dropout, LSTM, TimeDistributed
 from keras.callbacks import EarlyStopping
 from keras.initializers import he_normal, glorot_normal
 from keras.layers import RepeatVector
+from keras.utils import plot_model
+# from keras_sequential_ascii import keras2ascii
 # just set the seed for the random number generator
 
 import pickle
@@ -81,6 +83,7 @@ class ForecastingTrader:
                                    abs(spread_train.shift(lag+multistep))) * 100
         positive_changes = spread_train_pct_change[spread_train_pct_change > 0]
         negative_changes = spread_train_pct_change[spread_train_pct_change < 0]
+        #
         #long_threshold = max(positive_changes.quantile(q=high_quantile, interpolation='linear'), 5)
         #long_threshold = min(long_threshold, 50)
         long_threshold = positive_changes.quantile(q=high_quantile, interpolation='linear')
@@ -141,6 +144,8 @@ class ForecastingTrader:
         trading_durations = trader.add_trading_duration(numUnits_df)
         # calculate balance
         balance_summary = trader.calculate_balance(Y, X, beta, numUnits.shift(1).fillna(0), trading_durations)
+        # calculate return per position
+        position_ret, _, _ = trader.calculate_position_returns(Y, X, beta, numUnits)
 
         # summarize
         ret_with_costs, cum_ret_with_costs = balance_summary.returns, (balance_summary.account_balance-1)
@@ -151,8 +156,9 @@ class ForecastingTrader:
                                      'spread(t)': spread_test.values,
                                      'predicted_change(%)': predictions_pct_change,
                                      'position_during_day': numUnits.shift(1).fillna(0).values[lookback:],
-                                     'Y': Y[lookback:],
-                                     'X': X[lookback:],
+                                     'position_return': position_ret,
+                                     #'Y': Y[lookback:],
+                                     #'X': X[lookback:],
                                      'trading_days': trading_durations[lookback:],
                                      'ret_with_costs': ret_with_costs[lookback:],
                                      'predicted_direction': pd.cut(predictions_pct_change, bins, labels=names),
@@ -206,8 +212,6 @@ class ForecastingTrader:
 
         return ret_with_costs, cum_ret_with_costs, summary, balance_summary
 
-
-
     def spread_trading(self, X, Y, spread_test, spread_train, beta, predictions, lag, low_quantile=0.10,
                        high_quantile=0.90, multistep=0):
         """
@@ -249,6 +253,26 @@ class ForecastingTrader:
         shortsEntry = shortsEntry.shift(-1).fillna(False)
         numUnits[shortsEntry] = -1.
 
+        # ffill if applicable
+        if lag == 1:
+            change_from_previous = predictions_change
+        else:
+            change_from_previous = (predictions_1 - spread_test.shift(1)).fillna(0)
+        for i in range(1, len(numUnits) - 1):
+            if numUnits[i] != 0:
+                continue
+            else:
+                if numUnits[i - 1] == 0:
+                    continue
+                elif numUnits[i - 1] == 1.:
+                    if change_from_previous[i + 1] > 0:
+                        numUnits[i] = 1
+                        continue
+                elif numUnits[i - 1] == -1.:
+                    if change_from_previous[i + 1] < 0:
+                        numUnits[i] = -1.
+                        continue
+
         # 4. Calculate P&L and Returns
         trader = class_Trader.Trader()
 
@@ -282,6 +306,96 @@ class ForecastingTrader:
 
         return ret_with_costs, cum_ret_with_costs, summary, balance_summary
 
+    def momentum_trading(self, X, Y, spread_test, spread_train, beta, predictions, lag, low_quantile=0.10,
+                         high_quantile=0.90, multistep=0):
+        """
+        This function will set the trading positions based on the forecasted spread.
+        For each day, the function compares the predicted spread for that day with the
+        true value of the spread in tha day before, giving the predicted spread pct change.
+        In case it is larger than the threshold, a position is entered.
+        Note: because a position entered in day n it is only accounted for on the day after,
+        we shift the entered positions.
+        : predictions: predictions should not be standardized, but with regular mean and variance.
+        """
+        # 1. Get predictions change
+        if multistep == 0:
+            predictions_1 = predictions
+            predictions_change = spread_test - predictions_1
+        else:
+            predictions_1, predictions_2 = predictions
+            predictions_change = (predictions_2 - predictions_1.shift(lag)).fillna(0)
+            # need to add last row
+            predictions_change = predictions_change.append(pd.Series(data=[0], index=spread_test[-1:].index))
+            predictions_1 = predictions_1.append(pd.Series(data=predictions_2[-1], index=spread_test[-1:].index))
+
+        # 2. Calculate trading threshold
+        spread_train_change = (spread_train - spread_train.shift(lag+multistep)).fillna(0)
+        positive_changes = spread_train_change[spread_train_change > 0]
+        negative_changes = spread_train_change[spread_train_change < 0]
+        long_threshold = positive_changes.quantile(q=high_quantile, interpolation='linear')
+        print('Long threshold: {:.2f}'.format(long_threshold))
+        short_threshold = negative_changes.quantile(q=low_quantile, interpolation='linear')
+        print('Short threshold: {:.2f}'.format(short_threshold))
+
+        # 3. Define trading timings
+        numUnits = pd.Series(data=[0.] * len(spread_test), index=spread_test.index, name='numUnits')
+        longsEntry = predictions_change > long_threshold
+        numUnits[longsEntry] = 1.
+        shortsEntry = predictions_change < short_threshold
+        numUnits[shortsEntry] = -1.
+
+        # ffill if applicable
+        if lag == 1:
+            change_from_previous = predictions_change
+        else:
+            change_from_previous = (predictions_1 - spread_test.shift(1)).fillna(0)
+        for i in range(1, len(numUnits) - 1):
+            if numUnits[i] != 0:
+                continue
+            else:
+                if numUnits[i - 1] == 0:
+                    continue
+                elif numUnits[i - 1] == 1.:
+                    if change_from_previous[i] > 0:
+                        numUnits[i] = 1
+                        continue
+                elif numUnits[i - 1] == -1.:
+                    if change_from_previous[i] < 0:
+                        numUnits[i] = -1.
+                        continue
+
+        # 4. Calculate P&L and Returns
+        trader = class_Trader.Trader()
+
+        # concatenate for positions with not enough data to be predicted
+        lookback = len(Y)-len(spread_test)
+        numUnits_not_predicted = pd.Series(data=[0.] * lookback, index=Y.index[:lookback])
+        numUnits = pd.concat([numUnits_not_predicted, numUnits], axis=0)
+        numUnits.name = 'numUnits'
+        # add trade durations
+        numUnits_df = pd.DataFrame(numUnits, index=Y.index)
+        numUnits_df = numUnits_df.rename(columns={"positions": "numUnits"})
+        trading_durations = trader.add_trading_duration(numUnits_df)
+        # calculate balance
+        balance_summary = trader.calculate_balance(Y, X, beta, numUnits.shift(1).fillna(0), trading_durations)
+
+        # summarize
+        ret_with_costs, cum_ret_with_costs = balance_summary.returns, (balance_summary.account_balance-1)
+        summary = pd.DataFrame(data={'prediction(t)': predictions_1.values,
+                                     'spread(t)': spread_test.values,
+                                     'spread_predicted_change': predictions_change.values,
+                                     'position_during_day': numUnits.shift(1).fillna(0).values[lookback:],
+                                     '{}'.format(Y.name): Y[lookback:],
+                                     '{}'.format(X.name): X[lookback:],
+                                     'trading_days': trading_durations[lookback:],
+                                     'ret_with_costs': ret_with_costs[lookback:]
+                                     },
+                               index=spread_test.index)
+        print('Accuracy of time series forecasting: {:.2f}%'.format(self.calculate_direction_accuracy(spread_test,
+                                                                                                  predictions_1)))
+
+        return ret_with_costs, cum_ret_with_costs, summary, balance_summary
+
     def calculate_direction_accuracy(self, true, predictions):
 
         bins = [-np.inf, -0.00000001, 0.00000001, np.inf]
@@ -290,8 +404,12 @@ class ForecastingTrader:
 
         predicted_direction = pd.cut(predictions_change, bins, labels=names)
         true_direction = pd.cut(true.diff().fillna(0), bins, labels=names)
+        #accuracy = len(predicted_direction[predicted_direction == true_direction])/len(predicted_direction) * 100
 
-        accuracy = len(predicted_direction[predicted_direction == true_direction])/len(predicted_direction) * 100
+        predicted_direction_subset = predicted_direction[true_direction != '0']
+        true_direction_subset = true_direction[true_direction != '0']
+        accuracy = len(predicted_direction_subset[predicted_direction_subset == true_direction_subset]) / \
+                   len(predicted_direction_subset) * 100
 
         return accuracy
 
@@ -440,7 +558,8 @@ class ForecastingTrader:
                                                                             batch_size=model_config['batch_size'])
 
             elif model_type == 'rnn':
-                model, history, score, predictions_val, predictions_test = self.apply_RNN(X=train_data[0],
+                model, history, score, predictions_train, predictions_val, predictions_test = \
+                                                              self.apply_RNN(X=train_data[0],
                                                                              y=train_data[1],
                                                                              validation_data=validation_data,
                                                                              test_data=test_data,
@@ -450,7 +569,8 @@ class ForecastingTrader:
                                                                              loss_fct=model_config['loss_fct'],
                                                                              batch_size=model_config['batch_size'])
             elif model_type == 'encoder_decoder':
-                model, history, score, predictions_val, predictions_test = self.apply_encoder_decoder(X=train_data[0],
+                model, history, score, predictions_train, predictions_val, predictions_test = \
+                                                self.apply_encoder_decoder(X=train_data[0],
                                                                            y=train_data[1],
                                                                            validation_data=validation_data,
                                                                            test_data=test_data,
@@ -461,6 +581,8 @@ class ForecastingTrader:
                                                                            optimizer=model_config['optimizer'],
                                                                            loss_fct=model_config['loss_fct'],
                                                                            batch_size=model_config['batch_size'])
+                # train
+                # TO DO
 
                 # validation
                 predictions_val = pd.DataFrame({'t': predictions_val.reshape(predictions_val.shape[0],
@@ -482,8 +604,11 @@ class ForecastingTrader:
 
             # transform predictions to series
             if model_type != 'encoder_decoder':
+                predictions_train = scaler.inverse_transform(predictions_train)
                 predictions_val = scaler.inverse_transform(predictions_val)
                 predictions_test = scaler.inverse_transform(predictions_test)
+                predictions_train = pd.Series(data=predictions_train.flatten(),
+                                              index=spread[-len(train_data[1]):].index)
                 predictions_val = pd.Series(data=predictions_val.flatten(), index=y_series_val.index)
                 predictions_test = pd.Series(data=predictions_test.flatten(),
                                              index=spread_test[-len(test_data[1]):].index)
@@ -501,6 +626,7 @@ class ForecastingTrader:
                           'history': history.history,
                           'score': score,
                           'epoch_stop': epoch_stop,
+                          'predictions_train': predictions_train.copy(),
                           'predictions_val': predictions_val.copy(),
                           'predictions_test': predictions_test.copy()
                           }
@@ -574,7 +700,8 @@ class ForecastingTrader:
         glorot_init = glorot_normal(seed=None)
         # add GRU layers
         if len(hidden_nodes) == 1:
-            model.add(LSTM(hidden_nodes[0], activation='relu', input_shape=(X.shape[1], 1), kernel_initializer=glorot_init))
+            model.add(LSTM(hidden_nodes[0], activation='relu', input_shape=(X.shape[1], 1),
+                           kernel_initializer=glorot_init))
         else:
             for i in range(len(hidden_nodes)-1):
                 if i == 0:
@@ -587,6 +714,8 @@ class ForecastingTrader:
                 model.add(Dropout(0.2))
 
             model.add(GRU(hidden_nodes[-1], activation='relu', kernel_initializer=glorot_init)) # last layer does not return sequences
+        # add regularization
+        model.add(Dropout(0.2))
         # add dense layer for output
         model.add(Dense(1, kernel_initializer=glorot_init))
         model.compile(optimizer=optimizer, loss=loss_fct, metrics=['mae'])
@@ -613,6 +742,7 @@ class ForecastingTrader:
         #test_score = model.evaluate(X_test, y_test, verbose=1)
         # , 'test': test_score}
 
+        predictions_train = model.predict(X, verbose=1)
         predictions_validation = model.predict(X_val, verbose=1)
         predictions_test = model.predict(X_test, verbose=1)
 
@@ -623,7 +753,7 @@ class ForecastingTrader:
         print('The mae test loss is: ', val_score[1])
         print('------------------------------------------------------------')
 
-        return model, history, score, predictions_validation, predictions_test
+        return model, history, score, predictions_train, predictions_validation, predictions_test
 
     # ################################### ENCODER DECODER ############################################
     def apply_encoder_decoder(self, X, y, validation_data, test_data, n_in, n_out, hidden_nodes,
@@ -643,9 +773,13 @@ class ForecastingTrader:
         model.add(LSTM(hidden_nodes[0], activation='relu', input_shape=(n_in, 1),  kernel_initializer=glorot_init))
         model.add(RepeatVector(n_out))
         model.add(LSTM(hidden_nodes[1], activation='relu', return_sequences=True,  kernel_initializer=glorot_init))
+        model.add(Dropout(0.2))
         model.add(TimeDistributed(Dense(1, kernel_initializer=glorot_init)))
         model.compile(optimizer=optimizer, loss=loss_fct, metrics=['mae'])
         model.summary()
+        plot_model(model, to_file='/content/drive/PairsTrading/encoder_decoder/model.png', show_shapes=True,
+                   show_layer_names=False)
+        print(keras2ascii(model))
 
         # fit model
         # simple early stopping
@@ -665,6 +799,7 @@ class ForecastingTrader:
 
         score = {'train': train_score, 'val': val_score}
 
+        predictions_train = model.predict(X, verbose=1)
         predictions_validation = model.predict(X_val, verbose=1)
         predictions_test = model.predict(X_test, verbose=1)
 
@@ -675,7 +810,7 @@ class ForecastingTrader:
         print('The mae test loss is: ', val_score[1])
         print('------------------------------------------------------------')
 
-        return model, history, score, predictions_validation, predictions_test
+        return model, history, score, predictions_train, predictions_validation, predictions_test
 
     def display_forecasting_score(self, models):
 

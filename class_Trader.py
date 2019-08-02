@@ -961,6 +961,7 @@ class Trader:
 
         #print(xs[i])
         #print(xs[j])
+        print('Max DD period: {} days'.format(round((i-j)/78)))
 
         return (xs[i]-xs[j])/xs[j] * 100
 
