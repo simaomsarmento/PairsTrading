@@ -26,7 +26,7 @@ from keras.callbacks import EarlyStopping
 from keras.initializers import he_normal, glorot_normal
 from keras.layers import RepeatVector
 from keras.utils import plot_model
-# from keras_sequential_ascii import keras2ascii
+from keras_sequential_ascii import keras2ascii
 # just set the seed for the random number generator
 
 import pickle
@@ -715,11 +715,14 @@ class ForecastingTrader:
 
             model.add(GRU(hidden_nodes[-1], activation='relu', kernel_initializer=glorot_init)) # last layer does not return sequences
         # add regularization
-        model.add(Dropout(0.2))
+        #model.add(Dropout(0.1))
         # add dense layer for output
         model.add(Dense(1, kernel_initializer=glorot_init))
         model.compile(optimizer=optimizer, loss=loss_fct, metrics=['mae'])
         model.summary()
+        plot_model(model, to_file='/content/drive/PairsTrading/rnn_models/model.png', show_shapes=True,
+                   show_layer_names=False)
+        print(keras2ascii(model))
 
         # simple early stopping
         es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=50)
