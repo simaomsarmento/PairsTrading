@@ -26,7 +26,7 @@ from keras.callbacks import EarlyStopping
 from keras.initializers import he_normal, glorot_normal
 from keras.layers import RepeatVector
 from keras.utils import plot_model
-from keras_sequential_ascii import keras2ascii
+#from keras_sequential_ascii import keras2ascii
 # just set the seed for the random number generator
 
 import pickle

@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import sys
+import collections, functools, operator
 
 import statsmodels.api as sm
 from statsmodels.tsa.stattools import coint, adfuller
@@ -47,8 +48,8 @@ class SeriesAnalyser:
 
         return {'t_statistic': result[0], 'p_value': result[1], 'critical_values': result[4]}
 
-    def check_properties(self, train_series, test_series, p_value_threshold, min_half_life=5, min_zero_crossings=0,
-                         hurst_threshold=0.5, subsample=0):
+    def check_properties(self, train_series, test_series, p_value_threshold, min_half_life=78, max_half_life=20000,
+                         min_zero_crossings=0, hurst_threshold=0.5, subsample=0):
         """
         Gets two time series as inputs and provides information concerning cointegration stasttics
         Y - b*X : Y is dependent, X is independent
@@ -61,20 +62,21 @@ class SeriesAnalyser:
         X = train_series[0]
         Y = train_series[1]
         pairs = [(X, Y), (Y, X)]
-        coint_stats = [0] * 2
+        pair_stats = [0] * 2
+        criteria_not_verified = 'cointegration'
 
-        for i, pair in enumerate(pairs):
-            S1 = np.asarray(pair[0])
-            S2 = np.asarray(pair[1])
+        # first of all, must verify price series S1 and S2 are I(1)
+        stats_Y = self.check_for_stationarity(np.asarray(Y), subsample=subsample)
+        if stats_Y['p_value'] > 0.10:
+            stats_X = self.check_for_stationarity(np.asarray(X), subsample=subsample)
+            if stats_X['p_value'] > 0.10:
+                # conditions to test cointegration verified
 
-            # first of all, must verify price series S1 and S2 are I(1)
-            stats_S1 = self.check_for_stationarity(S1, subsample=subsample)
-            if stats_S1['p_value'] > 0.10:
-                stats_S2 = self.check_for_stationarity(S2, subsample=subsample)
-                if stats_S2['p_value'] > 0.10:
-
-                    #series_name = S1.name
+                for i, pair in enumerate(pairs):
+                    S1 = np.asarray(pair[0])
+                    S2 = np.asarray(pair[1])
                     S1_c = sm.add_constant(S1)
+
                     # Y = bX + c
                     # ols: (Y, X)
                     results = sm.OLS(S2, S1_c).fit()
@@ -86,17 +88,21 @@ class SeriesAnalyser:
 
                         stats = self.check_for_stationarity(spread_array, subsample=subsample)
                         if stats['p_value'] < p_value_threshold:  # verifies required pvalue
+                            criteria_not_verified = 'hurst_exponent'
 
-                            zero_cross = self.zero_crossings(spread_array)
-                            if zero_cross >= min_zero_crossings:
+                            hurst_exponent = self.hurst(spread_array)
+                            if hurst_exponent < hurst_threshold:
+                                criteria_not_verified = 'half_life'
 
                                 hl = self.calculate_half_life(spread_array)
-                                if hl >= min_half_life:
+                                if (hl >= min_half_life) and (hl < max_half_life):
+                                    criteria_not_verified = 'mean_cross'
 
-                                    hurst_exponent = self.hurst(spread_array)
-                                    if hurst_exponent < hurst_threshold:
+                                    zero_cross = self.zero_crossings(spread_array)
+                                    if zero_cross >= min_zero_crossings:
+                                        criteria_not_verified = 'None'
 
-                                        coint_stats[i] = {'t_statistic': stats['t_statistic'],
+                                        pair_stats[i] = {'t_statistic': stats['t_statistic'],
                                                           'critical_val': stats['critical_values'],
                                                           'p_value': stats['p_value'],
                                                           'coint_coef': b,
@@ -108,34 +114,34 @@ class SeriesAnalyser:
                                                           'X_train': pair[0]
                                                           }
 
-        if coint_stats[0] == 0 and coint_stats[1] == 0:
-            coint_result = None
-            return coint_result
+        if pair_stats[0] == 0 and pair_stats[1] == 0:
+            result = None
+            return result, criteria_not_verified
 
-        elif coint_stats[0] == 0:
-            coint_result = 1
-        elif coint_stats[1] == 0:
-            coint_result = 0
+        elif pair_stats[0] == 0:
+            result = 1
+        elif pair_stats[1] == 0:
+            result = 0
         else: # both combinations are possible
             # select lowest t-statistic as representative test
-            if abs(coint_stats[0]['t_statistic']) > abs(coint_stats[1]['t_statistic']):
-                coint_result = 0
+            if abs(pair_stats[0]['t_statistic']) > abs(pair_stats[1]['t_statistic']):
+                result = 0
             else:
-                coint_result = 1
+                result = 1
 
-        if coint_result == 0:
-            coint_result = coint_stats[0]
-            coint_result['X_test'] = test_series[0]
-            coint_result['Y_test'] = test_series[1]
-        elif coint_result == 1:
-            coint_result = coint_stats[1]
-            coint_result['X_test'] = test_series[1]
-            coint_result['Y_test'] = test_series[0]
+        if result == 0:
+            result = pair_stats[0]
+            result['X_test'] = test_series[0]
+            result['Y_test'] = test_series[1]
+        elif result == 1:
+            result = pair_stats[1]
+            result['X_test'] = test_series[1]
+            result['Y_test'] = test_series[0]
 
-        return coint_result
+        return result, criteria_not_verified
 
-    def find_pairs(self, data_train, data_test, p_value_threshold, min_half_life=5, min_zero_crossings=0,
-                   hurst_threshold=0.5, subsample=0):
+    def find_pairs(self, data_train, data_test, p_value_threshold, min_half_life=78, max_half_life=20000,
+                   min_zero_crossings=0, hurst_threshold=0.5, subsample=0):
         """
         This function receives a df with the different securities as columns, and aims to find tradable
         pairs within this world. There is a df containing the training data and another one containing test data
@@ -154,17 +160,21 @@ class SeriesAnalyser:
         """
         n = data_train.shape[1]
         keys = data_train.keys()
+        pairs_fail_criteria = {'cointegration': 0, 'hurst_exponent': 0, 'half_life': 0, 'mean_cross': 0, 'None': 0}
         pairs = []
         for i in range(n):
             for j in range(i + 1, n):
                 S1_train = data_train[keys[i]]; S2_train = data_train[keys[j]]
                 S1_test = data_test[keys[i]]; S2_test = data_test[keys[j]]
-                result = self.check_properties((S1_train, S2_train), (S1_test, S2_test), p_value_threshold,
-                                               min_half_life, min_zero_crossings, hurst_threshold, subsample)
+                result, criteria_not_verified = self.check_properties((S1_train, S2_train), (S1_test, S2_test),
+                                                                      p_value_threshold, min_half_life, max_half_life,
+                                                                      min_zero_crossings, hurst_threshold, subsample)
+                pairs_fail_criteria[criteria_not_verified] += 1
                 if result is not None:
                     pairs.append((keys[i], keys[j], result))
 
-        return pairs
+
+        return pairs, pairs_fail_criteria
 
     def pairs_overlap(self, pairs, p_value_threshold, min_zero_crossings, min_half_life, hurst_threshold):
         """
@@ -422,8 +432,9 @@ class SeriesAnalyser:
         return best_n_comp['X'], best_n_comp['clustered_series_all'], best_n_comp['clustered_series'], best_n_comp[
             'counts'], best_n_comp['clf']
 
-    def get_candidate_pairs(self, clustered_series, pricing_df_train, pricing_df_test, min_half_life=5,
-                            min_zero_crosings=20, p_value_threshold=0.05, hurst_threshold=0.5, subsample=0):
+    def get_candidate_pairs(self, clustered_series, pricing_df_train, pricing_df_test, min_half_life=78,
+                            max_half_life=20000, min_zero_crosings=20, p_value_threshold=0.05, hurst_threshold=0.5,
+                            subsample=0):
         """
         This function looks for tradable pairs over the clusters formed previously.
 
@@ -440,7 +451,7 @@ class SeriesAnalyser:
         :return: list of unique tickers identified in the candidate pairs universe
         """
 
-        total_pairs = []
+        total_pairs, total_pairs_fail_criteria = [], []
         n_clusters = len(clustered_series.value_counts())
         for clust in range(n_clusters):
             sys.stdout.write("\r"+'Cluster {}/{}'.format(clust+1, n_clusters))
@@ -448,18 +459,23 @@ class SeriesAnalyser:
             symbols = list(clustered_series[clustered_series == clust].index)
             cluster_pricing_train = pricing_df_train[symbols]
             cluster_pricing_test = pricing_df_test[symbols]
-            pairs = self.find_pairs(cluster_pricing_train,
-                                    cluster_pricing_test,
-                                    p_value_threshold,
-                                    min_half_life,
-                                    min_zero_crosings,
-                                    hurst_threshold,
-                                    subsample)
+            pairs, pairs_fail_criteria = self.find_pairs(cluster_pricing_train,
+                                                        cluster_pricing_test,
+                                                        p_value_threshold,
+                                                        min_half_life,
+                                                        max_half_life,
+                                                        min_zero_crosings,
+                                                        hurst_threshold,
+                                                        subsample)
             total_pairs.extend(pairs)
+            total_pairs_fail_criteria.append(pairs_fail_criteria)
 
         print('Found {} pairs'.format(len(total_pairs)))
-
         unique_tickers = np.unique([(element[0], element[1]) for element in total_pairs])
         print('The pairs contain {} unique tickers'.format(len(unique_tickers)))
+
+        # discarded
+        review = dict(functools.reduce(operator.add, map(collections.Counter, total_pairs_fail_criteria)))
+        print('Pairs Selection failed stage: ', review)
 
         return total_pairs, unique_tickers

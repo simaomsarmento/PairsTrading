@@ -142,7 +142,6 @@ class Trader:
         # position durations
         trading_durations = self.add_trading_duration(pd.DataFrame(num_units, index=y.index))
 
-
         # calculate return per position
         position_ret, _, ret_summary = self.calculate_position_returns(y, x, beta, num_units)
         # calculate balance in total
@@ -480,7 +479,6 @@ class Trader:
 
         # add position costs
         summary['position_ret_with_costs'] = self.add_transaction_costs(summary, beta)
-        # summary = summary.drop('position_return', axis=1)
 
         return summary
 
@@ -644,6 +642,9 @@ class Trader:
                     if index.day != day:
                         new_position_counter += 1
                         day = index.day
+                    # verify if it is last trading day
+                    if index == df.index[-1]:
+                        df.loc[index, 'trading_duration'] = new_position_counter
                 continue  # no change in positions to verify
             else:
                 if previous_unit == 0.:
@@ -890,7 +891,7 @@ class Trader:
         :param ret: array containing returns per timestep
         :return: sharpe ratio
         """
-        rf = {2015: 0.0005, 2016: 0.0032, 2017: 0.0093, 2018: 0.0194}
+        rf = {2014: 0.00033, 2015: 0.00053, 2016: 0.0032, 2017: 0.0093, 2018: 0.0194}
         time_in_market = n_years * n_days
         daily_index = ret.resample('D').last().dropna().index
         daily_ret = (ret + 1).resample('D').prod() - 1
@@ -932,7 +933,7 @@ class Trader:
         weights = np.array([1 / len(pairs)] * len(pairs))
         vol = np.sqrt(np.dot(weights.T, np.dot(portfolio_returns.cov(), weights)))
         # calculate sharpe ratio
-        rf = {2015: 0.00053, 2016: 0.0032, 2017: 0.0093, 2018: 0.0194}
+        rf = {2014: 0.00033, 2015: 0.00053, 2016: 0.0032, 2017: 0.0093, 2018: 0.0194}
         annualized_ret = (total_account_balance[-1]-len(pairs))/len(pairs)
         year = total_account_balance.index[-1].year
         if year in rf.keys():
@@ -956,11 +957,18 @@ class Trader:
             return 0
         else:
             j = np.argmax(xs[:i])  # start of period
-            plt.plot(xs)
+            plt.figure(figsize=(10,7))
+            plt.grid()
+            plt.plot(xs, label='Total Account Balance')
+            dates = account_balance.resample('BMS').first().dropna().index.date
+            xi = np.arange(0, len(account_balance), len(account_balance)/12)
+            plt.xticks(xi, dates, rotation=50)
+            plt.xlim(0, len(account_balance))
             plt.plot([i, j], [xs[i], xs[j]], 'o', color='Red', markersize=10)
+            plt.xlabel('Date', size=12)
+            plt.ylabel('Capital($)', size=12)
+            plt.legend()
 
-        #print(xs[i])
-        #print(xs[j])
         print('Max DD period: {} days'.format(round((i-j)/78)))
 
         return (xs[i]-xs[j])/xs[j] * 100
@@ -984,6 +992,9 @@ class Trader:
         # create variable for signalizing end of position
         end_position = pd.Series(data=[0] * len(y), index=y.index, name='end_position')
         end_position[new_positions] = 1.
+        # add end position if trading period is over and position is open
+        if positions[-1] != 0:
+            end_position[-1] = 1.
 
         # get corresponding X and Y
         y_entry = pd.Series(data=[np.nan] * len(y), index=y.index, name='y_entry')
@@ -1093,13 +1104,13 @@ class Trader:
         cum_returns_filtered = cum_returns
 
         avg_sharpe_ratio = np.mean(sharpe_results_filtered)
-        print('Average result: ', avg_sharpe_ratio)
+        print('Average SR: ', avg_sharpe_ratio)
 
         avg_total_roi = np.mean(cum_returns_filtered)
         #print('avg_total_roi: ', avg_total_roi)
 
         avg_annual_roi = ((1 + (avg_total_roi / 100)) ** (1 / float(n_years)) - 1) * 100
-        print('avg_annual_roi: ', avg_annual_roi)
+        print('Annual ROI: ', avg_annual_roi)
 
         cum_returns_filtered = np.asarray(cum_returns_filtered)
         positive_pct = len(cum_returns_filtered[cum_returns_filtered > 0]) * 100 / len(cum_returns_filtered)
@@ -1121,13 +1132,16 @@ class Trader:
         avg_sharpe_ratio, avg_total_roi, avg_annual_roi, positive_pct = \
             self.calculate_metrics(sharpe_results, cum_returns, n_years)
 
+        portfolio_sharpe_ratio = self.calculate_portfolio_sharpe_ratio(performance, total_pairs)
+        print('Portfolio Sharpe Ratio: ', portfolio_sharpe_ratio)
+
         sorted_indices = np.flip(np.argsort(sharpe_results), axis=0)
         # print(sorted_indices)
         # initialize list of lists
         data = []
         for index in sorted_indices:
             # get number of positive and negative positions
-            position_returns = performance[index][1]['position_return']
+            position_returns = performance[index][1]['position_ret_with_costs']
             positive_positions = len(position_returns[position_returns > 0])
             negative_positions = len(position_returns[position_returns < 0])
             data.append([total_pairs[index][0],
@@ -1151,6 +1165,11 @@ class Trader:
 
         pairs_df['positive_trades_per_pair_pct'] = (pairs_df['positive_trades']) / \
                                                    (pairs_df['positive_trades'] + pairs_df['negative_trades']) * 100
+
+        print('Total number of trades: ', pairs_df.positive_trades.sum() + pairs_df.negative_trades.sum())
+        print('Positive trades: ', pairs_df.positive_trades.sum())
+        print('Negative trades: ', pairs_df.negative_trades.sum())
+
         avg_positive_trades_per_pair_pct = pairs_df['positive_trades_per_pair_pct'].mean()
 
         results = {'n_pairs': len(sharpe_results),
@@ -1161,5 +1180,12 @@ class Trader:
                    'pct_pairs_with_positive_results': positive_pct,
                    'avg_half_life': pairs_df['half_life'].mean(),
                    'avg_hurst_exponent': pairs_df['hurst_exponent'].mean()}
+
+        # Drawdown info
+        total_account_balance = performance[0][1]['account_balance']
+        for index in range(1, len(total_pairs)):
+            total_account_balance = total_account_balance + performance[index][1]['account_balance']
+        total_account_balance = total_account_balance.fillna(method='ffill')
+        print('Maximum drawdown of portfolio: {:.2f}%'.format(self.calculate_maximum_drawdown(total_account_balance)))
 
         return results, pairs_df
