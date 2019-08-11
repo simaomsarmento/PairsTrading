@@ -938,6 +938,12 @@ class Trader:
         year = total_account_balance.index[-1].year
         if year in rf.keys():
             sharpe_ratio = (annualized_ret - rf[year]) / (vol*np.sqrt(252))
+            print('Sharpe Ratio assumming IID returns: ',sharpe_ratio)
+            print('Autocorrelation: ', total_account_balance.pct_change().fillna(0).autocorr(lag=1))
+            annualized_ret = total_account_balance.pct_change().fillna(0).mean()
+            rf_daily = (1+rf[year])**(1/252)-1
+            sharpe_ratio = (annualized_ret-rf_daily) /vol #*np.sqrt(252)
+            print('Daily Sharpe Ratio', sharpe_ratio)
         else:
             print('Not considering risk-free rate')
             sharpe_ratio = annualized_ret / (vol*np.sqrt(252))
@@ -1133,7 +1139,7 @@ class Trader:
             self.calculate_metrics(sharpe_results, cum_returns, n_years)
 
         portfolio_sharpe_ratio = self.calculate_portfolio_sharpe_ratio(performance, total_pairs)
-        print('Portfolio Sharpe Ratio: ', portfolio_sharpe_ratio)
+        #print('Portfolio Sharpe Ratio: ', portfolio_sharpe_ratio)
 
         sorted_indices = np.flip(np.argsort(sharpe_results), axis=0)
         # print(sorted_indices)
