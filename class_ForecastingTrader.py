@@ -26,7 +26,7 @@ from keras.callbacks import EarlyStopping
 from keras.initializers import he_normal, glorot_normal
 from keras.layers import RepeatVector
 from keras.utils import plot_model
-#from keras_sequential_ascii import keras2ascii
+from keras_sequential_ascii import keras2ascii
 # just set the seed for the random number generator
 
 import pickle
@@ -546,7 +546,8 @@ class ForecastingTrader:
 
             # train model and get predictions
             if model_type == 'mlp':
-                model, history, score, predictions_val, predictions_test = self.apply_MLP(X=train_data[0],
+                model, history, score, predictions_train, predictions_val, predictions_test = \
+                                                              self.apply_MLP(X=train_data[0],
                                                                             y=train_data[1],
                                                                             validation_data=validation_data,
                                                                             test_data=test_data,
@@ -640,10 +641,6 @@ class ForecastingTrader:
     # ################################### MLP ############################################
     def apply_MLP(self, X, y, validation_data, test_data, n_in, hidden_nodes, epochs, optimizer, loss_fct,
                   batch_size=128):
-        # reset seed
-        # np.random.seed(0) # NumPy
-        # tf.set_random_seed(2) # Tensorflow
-        # random.seed(3) # Python
 
         # define validation set
         X_val = validation_data[0]
@@ -654,27 +651,37 @@ class ForecastingTrader:
         y_test = test_data[1]
 
         model = Sequential()
+        glorot_init = glorot_normal(seed=None)
         for i in range(len(hidden_nodes)):
-            model.add(Dense(hidden_nodes[i], activation='relu', input_dim=n_in))
-            # model.add(Dropout(0.2))
+            model.add(Dense(hidden_nodes[i], activation='relu', input_dim=n_in, kernel_initializer=glorot_init))
+        #model.add(Dropout(0.2))
         model.add(Dense(1))
         model.compile(optimizer=optimizer, loss=loss_fct, metrics=['mae'])
         model.summary()
+        plot_model(model, to_file='/content/drive/PairsTrading/mlp_models/model_{}-{}.png'.format(str(n_in),
+                                                                                                  str(hidden_nodes[0])),
+                   show_shapes=True, show_layer_names=False)
+        print(keras2ascii(model))
 
         # simple early stopping
         es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=50)
-        # pb = ProgbarLogger(count_mode='samples', stateful_metrics=None)
 
         history = model.fit(X, y, epochs=epochs, verbose=1, validation_data=validation_data,
-                            shuffle=False, batch_size=batch_size, callbacks=[es]) # , callbacks=[pb, es])
+                            shuffle=False, batch_size=batch_size, callbacks=[es])
 
-        train_score = model.evaluate(X, y, verbose=0)
-        val_score = model.evaluate(X_val, y_val, verbose=0)
-        test_score = model.evaluate(X_test, y_test, verbose=0)
-        score = {'train': train_score, 'val': val_score, 'test': test_score}
+        # scores
+        if len(history.history['loss']) < 500:
+            train_score = [min(history.history['loss']), min(history.history['mean_absolute_error'])]
+            val_score = [min(history.history['val_loss']),min(history.history['val_mean_absolute_error'])]
+        else:
+            train_score = [history.history['loss'][-1], history.history['mean_absolute_error'][-1]]
+            val_score = [history.history['val_loss'][-1], history.history['val_mean_absolute_error'][-1]]
+        score = {'train': train_score, 'val': val_score}
 
-        predictions_validation = model.predict(X_val)
-        predictions_test = model.predict(X_test)
+        # predictions
+        predictions_train = model.predict(X, verbose=1)
+        predictions_validation = model.predict(X_val, verbose=1)
+        predictions_test = model.predict(X_test, verbose=1)
 
         print('------------------------------------------------------------')
         print('The mse train loss is: ', train_score[0])
@@ -683,7 +690,7 @@ class ForecastingTrader:
         print('The mae test loss is: ', val_score[1])
         print('------------------------------------------------------------')
 
-        return model, history, score, predictions_validation, predictions_test
+        return model, history, score, predictions_train, predictions_validation, predictions_test
 
     # ################################### RNN ############################################
     def apply_RNN(self, X, y, validation_data, test_data, hidden_nodes, epochs, optimizer, loss_fct,
