@@ -975,7 +975,8 @@ class Trader:
             plt.ylabel('Capital($)', size=12)
             plt.legend()
 
-        print('Max DD period: {} days'.format(round((i-j)/78)))
+        #print('Max DD period: {} days'.format(round((i-j)/78)))
+        print('Max DD period: {} days'.format((account_balance.index[i]-account_balance.index[j]).days))
 
         return (xs[i]-xs[j])/xs[j] * 100
 

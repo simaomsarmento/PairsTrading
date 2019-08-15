@@ -21,12 +21,12 @@ from sklearn.preprocessing import StandardScaler
 
 # Import keras
 from keras.models import Sequential
-from keras.layers import Dense, Flatten, GRU, Dropout, LSTM, TimeDistributed
+from keras.layers import Dense, Flatten, GRU, Dropout, LSTM, TimeDistributed, CuDNNLSTM
 from keras.callbacks import EarlyStopping
 from keras.initializers import he_normal, glorot_normal
 from keras.layers import RepeatVector
 from keras.utils import plot_model
-from keras_sequential_ascii import keras2ascii
+#from keras_sequential_ascii import keras2ascii
 # just set the seed for the random number generator
 
 import pickle
@@ -146,6 +146,12 @@ class ForecastingTrader:
         balance_summary = trader.calculate_balance(Y, X, beta, numUnits.shift(1).fillna(0), trading_durations)
         # calculate return per position
         position_ret, _, _ = trader.calculate_position_returns(Y, X, beta, numUnits)
+        df = pd.DataFrame({'position_return':position_ret.values,
+                           'trading_duration':trading_durations,
+                           'position_during_day': numUnits.shift(1).fillna(0).values},
+                          index = position_ret.index)
+        position_ret_with_costs = trader.add_transaction_costs(df, beta)
+        balance_summary['position_ret_with_costs']=position_ret_with_costs
 
         # summarize
         ret_with_costs, cum_ret_with_costs = balance_summary.returns, (balance_summary.account_balance-1)
@@ -157,8 +163,7 @@ class ForecastingTrader:
                                      'predicted_change(%)': predictions_pct_change,
                                      'position_during_day': numUnits.shift(1).fillna(0).values[lookback:],
                                      'position_return': position_ret,
-                                     #'Y': Y[lookback:],
-                                     #'X': X[lookback:],
+                                     'position_ret_with_costs': position_ret_with_costs,
                                      'trading_days': trading_durations[lookback:],
                                      'ret_with_costs': ret_with_costs[lookback:],
                                      'predicted_direction': pd.cut(predictions_pct_change, bins, labels=names),
@@ -582,8 +587,6 @@ class ForecastingTrader:
                                                                            optimizer=model_config['optimizer'],
                                                                            loss_fct=model_config['loss_fct'],
                                                                            batch_size=model_config['batch_size'])
-                # train
-                # TO DO
 
                 # validation
                 predictions_val = pd.DataFrame({'t': predictions_val.reshape(predictions_val.shape[0],
@@ -603,13 +606,16 @@ class ForecastingTrader:
                 predictions_test['t'] = scaler.inverse_transform(np.array(predictions_test['t']))
                 predictions_test['t+1'] = scaler.inverse_transform(np.array(predictions_test['t+1']))
 
+                # train
+                predictions_train = predictions_val.copy()  # not relevant, just to fill up
+
             # transform predictions to series
             if model_type != 'encoder_decoder':
                 predictions_train = scaler.inverse_transform(predictions_train)
                 predictions_val = scaler.inverse_transform(predictions_val)
                 predictions_test = scaler.inverse_transform(predictions_test)
                 predictions_train = pd.Series(data=predictions_train.flatten(),
-                                              index=spread[-len(train_data[1]):].index)
+                                              index=spread[model_config['n_in']:-len(y_series_val)].index)
                 predictions_val = pd.Series(data=predictions_val.flatten(), index=y_series_val.index)
                 predictions_test = pd.Series(data=predictions_test.flatten(),
                                              index=spread_test[-len(test_data[1]):].index)
@@ -654,14 +660,17 @@ class ForecastingTrader:
         glorot_init = glorot_normal(seed=None)
         for i in range(len(hidden_nodes)):
             model.add(Dense(hidden_nodes[i], activation='relu', input_dim=n_in, kernel_initializer=glorot_init))
-        #model.add(Dropout(0.2))
+        #model.add(Dropout(0.1))
         model.add(Dense(1))
         model.compile(optimizer=optimizer, loss=loss_fct, metrics=['mae'])
         model.summary()
-        plot_model(model, to_file='/content/drive/PairsTrading/mlp_models/model_{}-{}.png'.format(str(n_in),
-                                                                                                  str(hidden_nodes[0])),
-                   show_shapes=True, show_layer_names=False)
-        print(keras2ascii(model))
+        if len(hidden_nodes)>1:
+            plot_model(model, to_file='/content/drive/PairsTrading/mlp_models/model_{}-{}_{}.png'.format(str(n_in),
+                       str(hidden_nodes[0]), str(hidden_nodes[1]), show_shapes=True, show_layer_names=False))
+        else:
+            plot_model(model, to_file='/content/drive/PairsTrading/mlp_models/model_{}-{}.png'.format(str(n_in),
+                       str(hidden_nodes[0])), show_shapes=True, show_layer_names=False)
+        #print(keras2ascii(model))
 
         # simple early stopping
         es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=50)
@@ -707,20 +716,26 @@ class ForecastingTrader:
         glorot_init = glorot_normal(seed=None)
         # add GRU layers
         if len(hidden_nodes) == 1:
-            model.add(LSTM(hidden_nodes[0], activation='relu', input_shape=(X.shape[1], 1),
-                           kernel_initializer=glorot_init))
+            #model.add(LSTM(hidden_nodes[0], activation='relu', input_shape=(X.shape[1], 1),
+            #               kernel_initializer=glorot_init))
+            model.add(CuDNNLSTM(hidden_nodes[0], input_shape=(X.shape[1], 1), kernel_initializer=glorot_init))
         else:
             for i in range(len(hidden_nodes)-1):
                 if i == 0:
-                    model.add(LSTM(hidden_nodes[0], activation='relu', input_shape=(X.shape[1], 1),
-                                  return_sequences=True, kernel_initializer=glorot_init))
+                    #model.add(LSTM(hidden_nodes[0], activation='relu', input_shape=(X.shape[1], 1),
+                    #              return_sequences=True, kernel_initializer=glorot_init))
+                    model.add(CuDNNLSTM(hidden_nodes[0], input_shape=(X.shape[1], 1),
+                                   return_sequences=True, kernel_initializer=glorot_init))
                 else:
-                    model.add(LSTM(hidden_nodes[i], activation='relu', return_sequences=True,
+                    #model.add(LSTM(hidden_nodes[i], activation='relu', return_sequences=True,
+                    #               kernel_initializer=glorot_init))
+                    model.add(CuDNNLSTM(hidden_nodes[i], return_sequences=True,
                                    kernel_initializer=glorot_init))
                 # add dropout in between
-                model.add(Dropout(0.2))
+                model.add(Dropout(0.1))
 
-            model.add(GRU(hidden_nodes[-1], activation='relu', kernel_initializer=glorot_init)) # last layer does not return sequences
+            #model.add(LSTM(hidden_nodes[-1], activation='relu', kernel_initializer=glorot_init)) # last layer does not return sequences
+            model.add(CuDNNLSTM(hidden_nodes[-1], kernel_initializer=glorot_init))# last layer does not return sequences
         # add regularization
         #model.add(Dropout(0.1))
         # add dense layer for output
@@ -729,7 +744,7 @@ class ForecastingTrader:
         model.summary()
         plot_model(model, to_file='/content/drive/PairsTrading/rnn_models/model.png', show_shapes=True,
                    show_layer_names=False)
-        print(keras2ascii(model))
+        #print(keras2ascii(model))
 
         # simple early stopping
         es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=50)
@@ -780,16 +795,18 @@ class ForecastingTrader:
         # define model
         glorot_init = glorot_normal(seed=None)
         model = Sequential()
-        model.add(LSTM(hidden_nodes[0], activation='relu', input_shape=(n_in, 1),  kernel_initializer=glorot_init))
+        #model.add(LSTM(hidden_nodes[0], activation='relu', input_shape=(n_in, 1),  kernel_initializer=glorot_init))
+        model.add(CuDNNLSTM(hidden_nodes[0], input_shape=(n_in, 1), kernel_initializer=glorot_init))
         model.add(RepeatVector(n_out))
-        model.add(LSTM(hidden_nodes[1], activation='relu', return_sequences=True,  kernel_initializer=glorot_init))
-        model.add(Dropout(0.2))
+        #model.add(LSTM(hidden_nodes[1], activation='relu', return_sequences=True,  kernel_initializer=glorot_init))
+        model.add(CuDNNLSTM(hidden_nodes[1], return_sequences=True, kernel_initializer=glorot_init))
+        #model.add(Dropout(0.1))
         model.add(TimeDistributed(Dense(1, kernel_initializer=glorot_init)))
         model.compile(optimizer=optimizer, loss=loss_fct, metrics=['mae'])
         model.summary()
         plot_model(model, to_file='/content/drive/PairsTrading/encoder_decoder/model.png', show_shapes=True,
                    show_layer_names=False)
-        print(keras2ascii(model))
+        #print(keras2ascii(model))
 
         # fit model
         # simple early stopping
@@ -886,19 +903,6 @@ class ForecastingTrader:
                                                             low_quantile=low_quantile,
                                                             high_quantile=high_quantile,
                                                             multistep=multistep)
-            """
-            ret, cumret, summary, balance_summary = self.spread_trading(
-                                                            X=pairs[pair_i][2]['X_train'][train_val_split:],
-                                                            Y=pairs[pair_i][2]['Y_train'][train_val_split:],
-                                                            spread_test=pairs[pair_i][2]['spread'][train_val_split:],
-                                                            spread_train=pairs[pair_i][2]['spread'][:train_val_split],
-                                                            beta=pairs[pair_i][2]['coint_coef'],
-                                                            predictions=predictions,
-                                                            #predictions=pairs[pair_i][2]['spread'].shift(1)[train_val_split:],
-                                                            lag=lag,
-                                                            low_quantile=low_quantile,
-                                                            high_quantile=high_quantile)
-            """
 
             print('Accumulated return: {:.2f}%'.format(cumret[-1] * 100))
 
@@ -914,10 +918,7 @@ class ForecastingTrader:
             summaries.append(summary)
             balance_summaries.append(balance_summary)
 
-        print('\nModel mean ROI: {:.2f}%'.format(np.mean(model_cumret)))
-        print('Model mean Sharpe Ratio: {:.2f}'.format(np.mean(model_sharpe_ratio)))
-
-        return model, model_cumret, summaries, balance_summaries
+        return model, model_cumret, model_sharpe_ratio, summaries, balance_summaries
 
     def test_specific_model(self, n_in, hidden_nodes, pairs, path, train_test_split='2018-01-01', lag=1,
                             low_quantile=0.10, high_quantile=0.90, multistep=0, profitable_pairs_indices=None):
@@ -949,18 +950,7 @@ class ForecastingTrader:
                                                             low_quantile=low_quantile,
                                                             high_quantile=high_quantile,
                                                             multistep=multistep)
-                """
-                ret, cumret, summary, _ = self.spread_trading(
-                                                            X=pairs[pair_i][2]['X_test'],
-                                                            Y=pairs[pair_i][2]['Y_test'],
-                                                            spread_test=spread_test[-len(predictions):],
-                                                            spread_train=pairs[pair_i][2]['spread'][:train_test_split],
-                                                            beta=pairs[pair_i][2]['coint_coef'],
-                                                            predictions=predictions,
-                                                            lag=lag,
-                                                            low_quantile=low_quantile,
-                                                            high_quantile=high_quantile)
-                """
+
                 print('Accumulated return: {:.2f}%'.format(cumret[-1] * 100))
 
                 trader = class_Trader.Trader()
@@ -975,9 +965,6 @@ class ForecastingTrader:
                 summaries.append(summary)
                 balance_summaries.append(balance_summary)
 
-        print('\nModel mean ROI on test set: {:.2f}%'.format(np.mean(model_cumret)))
-        print('Model mean Sharpe Ratio on test set: {:.2f}'.format(np.mean(model_sharpe_ratio)))
-
-        return model, model_cumret, summaries, balance_summaries
+        return model, model_cumret, model_sharpe_ratio, summaries, balance_summaries
 
 

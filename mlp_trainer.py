@@ -38,19 +38,22 @@ print('Loaded {} pairs!'.format(len(pairs)))
 
 ################################# TRAIN MODELS #################################
 
-n_in_set = [12, 24]
-hidden_nodes_set = [[5], [10], [20]]#, [5, 5], [10,10]]
+n_in_set = [6, 12, 24]
+hidden_nodes_set = [[10], [20], [30], [10,10]]
 hidden_nodes_names = [str(nodes[0])+'*2' if len(nodes) > 1 else str(nodes[0]) for nodes in hidden_nodes_set]
+
+# WARNING!!
+# pairs = pairs[:2]
 
 for input_dim in n_in_set:
     for i, hidden_nodes in enumerate(hidden_nodes_set):
         model_config = {"n_in": input_dim,
                         "n_out": 1,
-                        "epochs": 1,#500,
+                        "epochs": 500,
                         "hidden_nodes": hidden_nodes,
                         "loss_fct": "mse",
                         "optimizer": "rmsprop",
-                        "batch_size": 512,
+                        "batch_size": 256,
                         "train_val_split": '2017-01-01',
                         "test_init": '2018-01-01'}
         models = forecasting_trader.train_models(pairs, model_config, model_type='mlp')
