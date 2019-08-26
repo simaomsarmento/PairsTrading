@@ -37,8 +37,8 @@ print('Loaded {} pairs!'.format(len(pairs)))
 
 ################################# TRAIN MODELS #################################
 
-combinations = [(24, [20, 20]), (24, [30, 30]), (24, [50, 50])]
-hidden_nodes_names = ['20_20', '30_30', '50_50']
+combinations = [(24, [100, 100])]
+hidden_nodes_names = ['100_100']
 
 for i, configuration in enumerate(combinations):
 

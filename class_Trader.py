@@ -955,6 +955,11 @@ class Trader:
         source: https://stackoverflow.com/questions/22607324/start-end-and-duration-of-maximum-drawdown-in-python
         """
 
+        # first calculate total drawdown period
+        account_balance_drawdowns = account_balance.resample('D').last().dropna().diff().fillna(0).apply(lambda row: 0 if row >= 0 else 1)
+        total_dd_duration = account_balance_drawdowns.sum()
+        print('Total Drawdown Days: {} days'.format(total_dd_duration))
+
         xs = np.asarray(account_balance.values)
 
         i = np.argmax(np.maximum.accumulate(xs) - xs)  # end of the period
@@ -975,10 +980,11 @@ class Trader:
             plt.ylabel('Capital($)', size=12)
             plt.legend()
 
-        #print('Max DD period: {} days'.format(round((i-j)/78)))
-        print('Max DD period: {} days'.format((account_balance.index[i]-account_balance.index[j]).days))
+        max_dd_period = round((i - j) / 78)
+        print('Max DD period: {} days'.format(max_dd_period))
+        #print('Max DD period: {} days'.format((account_balance.index[i]-account_balance.index[j]).days))
 
-        return (xs[i]-xs[j])/xs[j] * 100
+        return (xs[i]-xs[j])/xs[j] * 100, max_dd_period, total_dd_duration
 
     def calculate_position_returns(self, y, x, beta, positions):
         """
@@ -1193,6 +1199,10 @@ class Trader:
         for index in range(1, len(total_pairs)):
             total_account_balance = total_account_balance + performance[index][1]['account_balance']
         total_account_balance = total_account_balance.fillna(method='ffill')
-        print('Maximum drawdown of portfolio: {:.2f}%'.format(self.calculate_maximum_drawdown(total_account_balance)))
+        max_dd, max_dd_duration, total_dd_duration = self.calculate_maximum_drawdown(total_account_balance)
+        print('Maximum drawdown of portfolio: {:.2f}%'.format(max_dd))
+
+        print('{:.2f}% - {:.2f}  {:.2f}%-{}d - {}d'.format(avg_annual_roi, portfolio_sharpe_ratio*(252**0.5), max_dd, max_dd_duration,
+                                                          total_dd_duration))
 
         return results, pairs_df

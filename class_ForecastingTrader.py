@@ -800,7 +800,7 @@ class ForecastingTrader:
         model.add(RepeatVector(n_out))
         #model.add(LSTM(hidden_nodes[1], activation='relu', return_sequences=True,  kernel_initializer=glorot_init))
         model.add(CuDNNLSTM(hidden_nodes[1], return_sequences=True, kernel_initializer=glorot_init))
-        #model.add(Dropout(0.1))
+        model.add(Dropout(0.1))
         model.add(TimeDistributed(Dense(1, kernel_initializer=glorot_init)))
         model.compile(optimizer=optimizer, loss=loss_fct, metrics=['mae'])
         model.summary()
