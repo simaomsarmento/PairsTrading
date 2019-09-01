@@ -1,22 +1,6 @@
 {
     "dataset": {
-        "path": "data/etfs/pickle/commodity_ETFs_long_updated",
-        "ticker_segment_dict": "data/etfs/pickle/ticker_segment_dict.pickle",
-        "ticker_attribute": "Ticker",
-        "training_initial_date": "01-01-2010",
-        "training_final_date": "01-01-2018",
-        "testing_initial_date": "01-01-2018",
-        "testing_final_date": "01-01-2019",
-        "data_source": "yahoo",
-        "nan_threshold": 0
-    },
-    "PCA": {
-        "N_COMPONENTS": [10,15]
-    },
-    "clustering": {
-        "algo": "DBSCAN",
-        "epsilon": 0.4,
-        "min_samples": 2
+        "ticker_segment_dict": "../data/etfs/pickle/ticker_segment_dict.pickle",
     },
     "pair_restrictions": {
         "min_half_life": 5,
