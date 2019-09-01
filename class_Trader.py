@@ -1116,9 +1116,6 @@ class Trader:
         sharpe_results_filtered = sharpe_results
         cum_returns_filtered = cum_returns
 
-        avg_sharpe_ratio = np.mean(sharpe_results_filtered)
-        print('Average SR: ', avg_sharpe_ratio)
-
         avg_total_roi = np.mean(cum_returns_filtered)
         #print('avg_total_roi: ', avg_total_roi)
 
@@ -1129,7 +1126,7 @@ class Trader:
         positive_pct = len(cum_returns_filtered[cum_returns_filtered > 0]) * 100 / len(cum_returns_filtered)
         print('{} % of the pairs had positive returns'.format(positive_pct))
 
-        return avg_sharpe_ratio, avg_total_roi, avg_annual_roi, positive_pct
+        return avg_total_roi, avg_annual_roi, positive_pct
 
     def summarize_results(self, sharpe_results, cum_returns, performance, total_pairs, ticker_segment_dict, n_years):
         """
@@ -1142,11 +1139,9 @@ class Trader:
         :return: dictionary with metrics of interest
         """
 
-        avg_sharpe_ratio, avg_total_roi, avg_annual_roi, positive_pct = \
-            self.calculate_metrics(sharpe_results, cum_returns, n_years)
+        avg_total_roi, avg_annual_roi, positive_pct = self.calculate_metrics(sharpe_results, cum_returns, n_years)
 
         portfolio_sharpe_ratio = self.calculate_portfolio_sharpe_ratio(performance, total_pairs)
-        #print('Portfolio Sharpe Ratio: ', portfolio_sharpe_ratio)
 
         sorted_indices = np.flip(np.argsort(sharpe_results), axis=0)
         # print(sorted_indices)
@@ -1186,7 +1181,7 @@ class Trader:
         avg_positive_trades_per_pair_pct = pairs_df['positive_trades_per_pair_pct'].mean()
 
         results = {'n_pairs': len(sharpe_results),
-                   'avg_sharpe_ratio': avg_sharpe_ratio,
+                   'portfolio_sharpe_ratio': portfolio_sharpe_ratio,
                    'avg_total_roi': avg_total_roi,
                    'avg_annual_roi': avg_annual_roi,
                    'pct_positive_trades_per_pair': avg_positive_trades_per_pair_pct,
@@ -1202,7 +1197,5 @@ class Trader:
         max_dd, max_dd_duration, total_dd_duration = self.calculate_maximum_drawdown(total_account_balance)
         print('Maximum drawdown of portfolio: {:.2f}%'.format(max_dd))
 
-        print('{:.2f}% - {:.2f}  {:.2f}%-{}d - {}d'.format(avg_annual_roi, portfolio_sharpe_ratio*(252**0.5), max_dd, max_dd_duration,
-                                                          total_dd_duration))
 
         return results, pairs_df

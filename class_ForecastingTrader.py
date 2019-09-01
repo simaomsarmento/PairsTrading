@@ -83,15 +83,10 @@ class ForecastingTrader:
                                    abs(spread_train.shift(lag+multistep))) * 100
         positive_changes = spread_train_pct_change[spread_train_pct_change > 0]
         negative_changes = spread_train_pct_change[spread_train_pct_change < 0]
-        #
-        #long_threshold = max(positive_changes.quantile(q=high_quantile, interpolation='linear'), 5)
-        #long_threshold = min(long_threshold, 50)
         long_threshold = positive_changes.quantile(q=high_quantile, interpolation='linear')
-        print('Long threshold: {:.2f}'.format(long_threshold))
-        #short_threshold = min(negative_changes.quantile(q=low_quantile, interpolation='linear'), -5)
-        #short_threshold = max(short_threshold, -50)
+        #print('Long threshold: {:.2f}'.format(long_threshold))
         short_threshold = negative_changes.quantile(q=low_quantile, interpolation='linear')
-        print('Short threshold: {:.2f}'.format(short_threshold))
+        #print('Short threshold: {:.2f}'.format(short_threshold))
 
         # 3. Define trading timings
         # Note: If we want to enter a position at the beginning of day N,
@@ -888,8 +883,8 @@ class ForecastingTrader:
         model_cumret, model_sharpe_ratio = list(), list()
         balance_summaries, summaries = list(), list()
         for pair_i in range(len(model) - 1):
-            print('\nPair loaded: {}_{}:'.format(model[pair_i]['leg1'], model[pair_i]['leg2']))
-            print('Check pairs: {}_{}.'.format(pairs[pair_i][0], pairs[pair_i][1]))
+            #print('\nPair loaded: {}_{}:'.format(model[pair_i]['leg1'], model[pair_i]['leg2']))
+            #print('Check pairs: {}_{}.'.format(pairs[pair_i][0], pairs[pair_i][1]))
             predictions = model[pair_i]['predictions_val']
 
             ret, cumret, summary, balance_summary = self.forecast_spread_trading(
@@ -904,14 +899,14 @@ class ForecastingTrader:
                                                             high_quantile=high_quantile,
                                                             multistep=multistep)
 
-            print('Accumulated return: {:.2f}%'.format(cumret[-1] * 100))
+            #print('Accumulated return: {:.2f}%'.format(cumret[-1] * 100))
 
             trader = class_Trader.Trader()
             if np.std(ret) != 0:
                 sharpe_ratio = trader.calculate_sharpe_ratio(1, 252, ret)
             else:
                 sharpe_ratio = 0
-            print('Sharpe Ratio:', sharpe_ratio)
+            #print('Sharpe Ratio:', sharpe_ratio)
 
             model_cumret.append(cumret[-1] * 100)
             model_sharpe_ratio.append(sharpe_ratio)
@@ -934,8 +929,8 @@ class ForecastingTrader:
         summaries, balance_summaries = list(), list()
         for pair_i in range(len(model) - 1):
             if pair_i in profitable_pairs_indices:
-                print('\nPair loaded: {}_{}:'.format(model[pair_i]['leg1'], model[pair_i]['leg2']))
-                print('Check pairs: {}_{}.'.format(pairs[pair_i][0], pairs[pair_i][1]))
+                #print('\nPair loaded: {}_{}:'.format(model[pair_i]['leg1'], model[pair_i]['leg2']))
+                #print('Check pairs: {}_{}.'.format(pairs[pair_i][0], pairs[pair_i][1]))
                 predictions = model[pair_i]['predictions_test']
                 spread_test = pairs[pair_i][2]['Y_test'] - pairs[pair_i][2]['coint_coef'] * pairs[pair_i][2]['X_test']
 
@@ -951,14 +946,14 @@ class ForecastingTrader:
                                                             high_quantile=high_quantile,
                                                             multistep=multistep)
 
-                print('Accumulated return: {:.2f}%'.format(cumret[-1] * 100))
+                #print('Accumulated return: {:.2f}%'.format(cumret[-1] * 100))
 
                 trader = class_Trader.Trader()
                 if np.std(ret) != 0:
                     sharpe_ratio = trader.calculate_sharpe_ratio(1, 252, ret)
                 else:
                     sharpe_ratio = 0
-                print('Sharpe Ratio:', sharpe_ratio)
+                #print('Sharpe Ratio:', sharpe_ratio)
 
                 model_cumret.append(cumret[-1] * 100)
                 model_sharpe_ratio.append(sharpe_ratio)
