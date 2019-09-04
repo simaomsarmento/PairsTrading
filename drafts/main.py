@@ -20,7 +20,7 @@ if __name__ == "__main__":
     ###################################################################################################################
     # 1. Upload Dataset
     # This code assumes the data preprocessing has been done previously by running the notebook:
-    # - PairsTrading_CommodityETFs-DataPreprocessing.ipynb
+    # - PairsTrading-DataPreprocessing.ipynb
     # Therefore, we simply retrieve the data from a pickle file and select the dates to study
     ###################################################################################################################
 
@@ -42,7 +42,7 @@ if __name__ == "__main__":
     ###################################################################################################################
     # 2. Pairs Filtering & Selection
     # As this part is very visual, the pairs filtering and selection can be obtained by running the notebook:
-    # - 'PairsTrading_CommodityETFs-Clustering.ipynb'
+    # - 'PairsTrading-Clustering.ipynb'
     # This section uploads the pairs for each scenario
     ###################################################################################################################
     # initialize series analyser
