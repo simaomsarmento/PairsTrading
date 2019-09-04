@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import sys
-import statsmodels.api as sm
 import matplotlib.pyplot as plt
 from datetime import timedelta
 
@@ -19,79 +18,15 @@ class Trader:
         :initial elements
         """
 
-    def rolling_regression(self, y, x, window):
+    def threshold_strategy(self, y, x, beta, entry_level=1.0, exit_level=1.0, stabilizing_threshold=5):
         """
-        y and x must be pandas.Series
-        y is the dependent variable
-        x is the independent variable
-        spread: y - b*x
-        Source: https://stackoverflow.com/questions/37317727/deprecated-rolling-window-
-                option-in-ols-from-pandas-to-statsmodels/39704930#39704930
-        """
-        # Clean-up
-        x = x.dropna()
-        y = y.dropna()
-        # Trim acc to shortest
-        if x.index.size > y.index.size:
-            x = x[y.index]
-        else:
-            y = y[x.index]
-        # Verify enough space
-        if x.index.size < window:
-            return None
-        else:
-            # Add a constant if needed
-            X_name = x.name
-            X = x.to_frame()
-            X['c'] = 1
-            # Loop... this can be improved
-            estimate_data = []
-            for i in range(window, len(X)):
-                X_slice = X.iloc[i - window:i, :]  # always index in np as opposed to pandas, much faster
-                y_slice = y.iloc[i - window:i]
-                coeff = sm.OLS(y_slice, X_slice).fit()
-                estimate_data.append(coeff.params[X_name])
-
-            # Assemble
-            estimate = pd.Series(data=np.nan, index=x.index[:window])
-            # add nan values for first #lookback indices
-            estimate = estimate.append(pd.Series(data=estimate_data, index=x.index[window:]))
-            return estimate
-
-    def rolling_zscore(self, Y, X, lookback):
-        """
-        This function calculates the normalized moving spread
-        Note that moving average and moving std will have the first 39 values as np.Nan, because
-        the spread is only valid after 20 points, and the moving averages still need 20 points more
-        to define its value.
-        """
-        # Calculate moving parameters
-        # 1.beta:
-        rolling_beta = self.rolling_regression(Y, X, window=lookback)
-        # 2.spread:
-        rolling_spread = Y - rolling_beta * X
-        # 3.moving average
-        rolling_avg = rolling_spread.rolling(window=lookback, center=False).mean()
-        rolling_avg.name = 'spread_' + str(lookback) + 'mavg'
-        # 4. rolling standard deviation
-        rolling_std = rolling_spread.rolling(window=lookback, center=False).std()
-        rolling_std.name = 'rolling_std_' + str(lookback)
-
-        # z-score
-        zscore = (rolling_spread - rolling_avg) / rolling_std
-
-        return zscore, rolling_beta
-
-    def threshold_strategy(self, y, x, beta, entry_level=1.0, exit_level=1.0, stabilizing_threshold=5,
-                           predictions=None):
-        """
-        This function implements a threshold filter strategy with a fixed beta, found from cointegration test.
-        :param y:
-        :param x:
-        :param entry_multiplier:
-        :param exit_multiplier:
-        :param stabilizing_threshold:
-        :return:
+        This function implements a threshold filter strategy with a fixed beta, corresponding to the cointegration
+        ratio.
+        :param y: price series of asset y
+        :param x: price series of asset x
+        :param entry_level: abs of long and short threshold
+        :param exit_multiplier: abs of exit threshold
+        :param stabilizing_threshold: number of initial periods when no positions should be set
         """
 
         spread = y - beta * x
@@ -130,15 +65,6 @@ class Trader:
         num_units = num_units_long + num_units_short
         num_units = pd.Series(data=num_units.values, index=y.index, name='numUnits')
 
-        if predictions is not None:
-            df = pd.DataFrame({'units': num_units.shift(1).fillna(0), 'predictions': predictions,
-                               'predictions_change': predictions.diff().fillna(0)})
-            df = self.update_positions(df, 'predictions_change', 0)
-            num_units = df.units.shift(-1).fillna(0)
-            num_units.name = 'numUnits'
-        else:
-            predictions = pd.Series(data=[0]*len(num_units), index=y.index)
-
         # position durations
         trading_durations = self.add_trading_duration(pd.DataFrame(num_units, index=y.index))
 
@@ -154,7 +80,6 @@ class Trader:
                              (balance_summary.account_balance, 'account_balance'),
                              (balance_summary.returns, 'returns'),
                              (position_ret, 'position_return'),
-                             (predictions.diff().fillna(0), 'prediction_change'),
                              (y, y.name),
                              (x, x.name),
                              (pd.Series(norm_spread, index=y.index), 'norm_spread'),
@@ -179,7 +104,7 @@ class Trader:
         return summary, (sharpe_no_costs, sharpe_w_costs), balance_summary
 
     def apply_trading_strategy(self, pairs, strategy='fixed_beta', entry_multiplier=1, exit_multiplier=0,
-                               test_mode=False, ai_support=False, train_val_split='2017-01-01'):
+                               test_mode=False, train_val_split='2017-01-01'):
         """
         This function calls the kalman filter implementation for every pair.
         :param pairs: list with pairs identified in the training set information
@@ -208,16 +133,9 @@ class Trader:
                 x = pair_info['X_train'][train_val_split:]
 
             if strategy == 'fixed_beta':
-
-                if ai_support:
-                    predictions = pair[2]['predictions']
-                else:
-                    predictions = None
-
                 summary, sharpe, balance_summary = self.threshold_strategy(y=y, x=x, beta=pair_info['coint_coef'],
                                                                            entry_level=entry_multiplier,
-                                                                           exit_level=exit_multiplier,
-                                                                           predictions=predictions)
+                                                                           exit_level=exit_multiplier)
                 # no costs
                 cum_returns.append((np.cumprod(1 + summary.position_return) - 1).iloc[-1] * 100)
                 sharpe_results.append(sharpe[0])
@@ -227,235 +145,12 @@ class Trader:
                 sharpe_results_with_costs.append(sharpe[1])
                 performance.append((pair, summary, balance_summary))
 
-            elif strategy == 'kalman_filter':
-                summary, ret_summary = self.kalman_filter(y=y, x=x,
-                                                          entry_multiplier=entry_multiplier,
-                                                          exit_multiplier=exit_multiplier)
-
-                cum_returns.append((np.cumprod(1 + summary.position_return) - 1).iloc[-1] * 100)
-                cum_returns_with_costs.append((np.cumprod(1 + summary.position_ret_with_costs) - 1).iloc[-1] * 100)
-                sharpe_results, sharpe_results_with_costs = 0, 0
-                performance.append((pair, summary))
-
-            elif strategy == 'bollinger_bands':
-                summary, ret_summary = self.bollinger_bands(y=y, x=x,
-                                                          entry_multiplier=entry_multiplier,
-                                                          exit_multiplier=exit_multiplier,
-                                                          lookback=78*80)
-
-                cum_returns.append((np.cumprod(1 + summary.position_return) - 1).iloc[-1] * 100)
-                cum_returns_with_costs.append((np.cumprod(1 + summary.position_ret_with_costs) - 1).iloc[-1] * 100)
-                print(' ',cum_returns_with_costs[-1])
-                sharpe_results, sharpe_results_with_costs = 0, 0
-                performance.append((pair, summary))
-
             else:
-                print('3 strategies are available: \n1.Fixed Beta\n2.Bollinger Bands\n3.Kalman Filter')
+                print('Only one strategy currently available: \n1.Fixed Beta')
                 exit()
 
         return (sharpe_results, cum_returns), (sharpe_results_with_costs, cum_returns_with_costs), performance
 
-    def kalman_filter(self, y, x, entry_multiplier=1.0, exit_multiplier=1.0, stabilizing_threshold=5):
-        """
-        This function implements a Kalman Filter for the estimation of
-        the moving hedge ratio
-        :param y:
-        :param x:
-        :param entry_multiplier:
-        :param exit_multiplier:
-        :param stabilizing_threshold:
-        :return:
-        """
-
-        # store series for late usage
-        x_series = x.copy()
-        y_series = y.copy()
-
-        # add constant
-        x = x.to_frame()
-        x['intercept'] = 1
-
-        x = np.array(x)
-        y = np.array(y)
-        delta = 0.0001
-        Ve = 0.001
-
-        yhat = np.ones(len(y)) * np.nan
-        e = np.ones(len(y)) * np.nan
-        Q = np.ones(len(y)) * np.nan
-        R = np.zeros((2, 2))
-        P = np.zeros((2, 2))
-
-        beta = np.matrix(np.zeros((2, len(y))) * np.nan)
-
-        Vw = delta / (1 - delta) * np.eye(2)
-
-        beta[:, 0] = 0.
-
-        for t in range(len(y)):
-            if (t > 0):
-                beta[:, t] = beta[:, t - 1]
-                R = P + Vw
-
-            yhat[t] = np.dot(x[t, :], beta[:, t])
-
-            tmp1 = np.matrix(x[t, :])
-            tmp2 = np.matrix(x[t, :]).T
-            Q[t] = np.dot(np.dot(tmp1, R), tmp2) + Ve
-
-            e[t] = y[t] - yhat[t]  # plays spread role
-
-            K = np.dot(R, np.matrix(x[t, :]).T) / Q[t]
-
-            # print R;print x[t, :].T;print Q[t];print 'K',K;print;print
-
-            beta[:, t] = beta[:, t] + np.dot(K, np.matrix(e[t]))
-
-            tmp1 = np.matrix(x[t, :])
-            P = R - np.dot(np.dot(K, tmp1), R)
-
-        # if t==2:
-        # print beta[0, :].T
-
-        # plt.plot(beta[0, :].T)
-        # plt.savefig('/tmp/beta1.png')
-        # plt.hold(False)
-        # plt.plot(beta[1, :].T)
-        # plt.savefig('/tmp/beta2.png')
-        # plt.hold(False)
-        # plt.plot(e[2:], 'r')
-        # plt.hold(True)
-        # plt.plot(np.sqrt(Q[2:]))
-        # plt.savefig('/tmp/Q.png')
-
-        y2 = pd.concat([x_series, y_series], axis=1)
-
-        longsEntry = e < -entry_multiplier * np.sqrt(Q)
-        longsExit = e > -exit_multiplier * np.sqrt(Q)
-
-        shortsEntry = e > entry_multiplier * np.sqrt(Q)
-        shortsExit = e < exit_multiplier * np.sqrt(Q)
-
-        numUnitsLong = pd.Series([np.nan for i in range(len(y))])
-        numUnitsShort = pd.Series([np.nan for i in range(len(y))])
-        # initialize with zero
-        numUnitsLong[0] = 0.
-        numUnitsShort[0] = 0.
-        # remove trades while the spread is stabilizing
-        longsEntry[:stabilizing_threshold] = False
-        longsExit[:stabilizing_threshold] = False
-        shortsEntry[:stabilizing_threshold] = False
-        shortsExit[:stabilizing_threshold] = False
-
-        numUnitsLong[longsEntry] = 1.
-        numUnitsLong[longsExit] = 0
-        numUnitsLong = numUnitsLong.fillna(method='ffill')
-
-        numUnitsShort[shortsEntry] = -1.
-        numUnitsShort[shortsExit] = 0
-        numUnitsShort = numUnitsShort.fillna(method='ffill')
-
-        numUnits = numUnitsLong + numUnitsShort
-        numUnits = pd.Series(data=numUnits.values, index=y_series.index, name='numUnits')
-
-        # position durations
-        trading_durations = self.add_trading_duration(pd.DataFrame(numUnits, index=y_series.index))
-
-        beta = pd.Series(data=np.squeeze(np.asarray(beta[0, :])), index=y_series.index).fillna(0)
-        position_ret, _, ret_summary = self.calculate_sliding_position_returns(y_series, x_series, beta, numUnits)
-
-        # add transaction costs and gather all info in df
-        series_to_include = [(position_ret, 'position_return'),
-                             (y_series, y_series.name),
-                             (x_series, x_series.name),
-                             (beta, 'beta_position'),
-                             (pd.Series(e, index=y_series.index), 'e'),
-                             (pd.Series(np.sqrt(Q), index=y_series.index), 'sqrt(Q)'),
-                             (numUnits, 'numUnits'),
-                             (trading_durations, 'trading_duration')]
-
-        summary = self.trade_summary(series_to_include)
-
-        return summary, ret_summary
-
-    def bollinger_bands(self, y, x, lookback, entry_multiplier=1, exit_multiplier=0):
-        """
-        This function implements a pairs trading strategy based
-        on bollinger bands.
-        Source: Example 3.2 EC's book
-        : Y & X: time series composing the spread
-        : lookback : Lookback period
-        : entry_multiplier : defines the multiple of std deviation used to enter a position
-        : exit_multiplier: defines the multiple of std deviation used to exit a position
-        """
-        # print("Warning: don't forget lookback (halflife) must be at least 3.")
-
-        entryZscore = entry_multiplier
-        exitZscore = exit_multiplier
-
-        # obtain zscore
-        zscore, rolling_beta = self.rolling_zscore(y, x, lookback)
-        zscore_array = np.asarray(zscore)
-
-        # find long and short indices
-        numUnitsLong = pd.Series([np.nan for i in range(len(y))])
-        numUnitsLong.iloc[0] = 0.
-        long_entries = self.cross_threshold(zscore_array, -entryZscore, 'down', 'entry')
-        numUnitsLong[long_entries] = 1.0
-        long_exits = self.cross_threshold(zscore_array, -exitZscore, 'up')
-        numUnitsLong[long_exits] = 0.0
-        numUnitsLong = numUnitsLong.fillna(method='ffill')
-        numUnitsLong.index = zscore.index
-
-        numUnitsShort = pd.Series([np.nan for i in range(len(y))])
-        numUnitsShort.iloc[0] = 0.
-        short_entries = self.cross_threshold(zscore_array, entryZscore, 'up', 'entry')
-        numUnitsShort[short_entries] = -1.0
-        short_exits = self.cross_threshold(zscore_array, exitZscore, 'down')
-        numUnitsShort[short_exits] = 0.0
-        numUnitsShort = numUnitsShort.fillna(method='ffill')
-        numUnitsShort.index = zscore.index
-
-        # concatenate all positions
-        numUnits = numUnitsShort + numUnitsLong
-        numUnits = pd.Series(data=numUnits.values, index=y.index, name='numUnits')
-
-        # position durations
-        trading_durations = self.add_trading_duration(pd.DataFrame(numUnits, index=y.index))
-
-        beta = rolling_beta.copy()
-        position_ret, _, ret_summary = self.calculate_sliding_position_returns(y, x, beta, numUnits)
-
-        # get trade summary
-        rolling_spread = y - rolling_beta * x
-
-        # All series contain Date as index
-        series_to_include = [(position_ret, 'position_return'),
-                             (y, y.name),
-                             (x, x.name),
-                             (rolling_beta, 'beta_position'),
-                             (rolling_spread, 'spread'),
-                             (zscore, 'zscore'),
-                             (numUnits, 'numUnits'),
-                             (trading_durations, 'trading_duration')]
-        summary = self.trade_summary(series_to_include)
-
-        return summary, ret_summary
-
-    def filter_profitable_pairs(self, sharpe_results, pairs):
-        """
-        This function discards pairs that were not profitable mantaining those for which a positive sharpe ratio was
-        obtained.
-        :param sharpe_results: list with sharpe resutls for every pair
-        :param pairs: list with all pairs and their info
-        :return: list with profitable pairs and their info
-        """
-
-        sharpe_results = np.asarray(sharpe_results)
-        profitable_pairs_indices = np.argwhere(sharpe_results > 0)
-        profitable_pairs = [pairs[i] for i in profitable_pairs_indices.flatten()]
-
-        return profitable_pairs
 
     def trade_summary(self, series, beta=0):
         """
@@ -481,147 +176,6 @@ class Trader:
         summary['position_ret_with_costs'] = self.add_transaction_costs(summary, beta)
 
         return summary
-
-    def cross_threshold(self, array, threshold, direction='up', position='exit'):
-        """
-        This function returns the indices corresponding to the positions where a given threshold
-        is crossed
-        :param array: np.array with time series
-        :param threshold: threshold to be crossed
-        :param direction: going up or down
-        :param mode: auxiliar variable indicating whether we are checking for a position entry or exit
-        :return: indices where threshold is crossed going in the desired direction
-        """
-
-        # add index for first element transitioning from None value, in case its above/below threshold
-        # only add when checking if position should be entered.
-        initial_index = []
-        first_index, first_element = next((item[0], item[1]) for item in enumerate(array) if not np.isnan(item[1]))
-        if position == 'entry':
-            if direction == 'up':
-                if first_element > threshold:
-                    initial_index.append(first_index)
-            elif direction == 'down':
-                if first_element < threshold:
-                    initial_index.append(first_index)
-            else:
-                print('The series must be either going "up" or "down", please insert valid direction')
-        initial_index = np.asarray(initial_index, dtype='int')
-
-        # add small decimal case to consider only strictly larger/smaller
-        if threshold > 0:
-            threshold = threshold + 0.000000001
-        else:
-            threshold = threshold - 0.000000001
-        array = array - threshold
-
-        # add other indices
-        indices = np.where(np.diff(np.sign(array)))[0] + 1
-        # only consider indices after first element which is not Nan
-        indices = indices[indices > first_index]
-
-        direction_indices = indices
-        for index in indices:
-            if direction == 'up':
-                if array[index] < array[index - 1]:
-                    direction_indices = direction_indices[direction_indices != index]
-            elif direction == 'down':
-                if array[index] > array[index - 1]:
-                    direction_indices = direction_indices[direction_indices != index]
-        # concatenate
-        direction_indices = np.concatenate((initial_index, direction_indices), axis=0)
-
-        return direction_indices
-
-    def apply_correlation_filter(self, lookback, lag, threshold, Y, X, units):
-        """
-        This function implements a filter proposed by Dunnis 2005.
-        The main idea is tracking how the correlation is varying in a moving period, so that we
-        are able to identify when the two legs of the spread are moving in opposing directions
-        by analyzing how the correlation values are varying.
-        :param lookback: lookback period
-        :param lag: lag to compare the correlaiton evolution
-        :param threshold: minimium difference to consider change
-        :param Y: Y series
-        :param X: X series
-        :param units: positions taken
-        :return: indices for position entry
-        """
-
-        # calculate correlation variations
-        rolling_window = lookback
-        returns_X = X.pct_change()
-        returns_Y = Y.pct_change()
-        correlation = returns_X.rolling(rolling_window).corr(returns_Y)
-        diff_correlation = correlation.diff(periods=lag).fillna(0)
-
-        # change positions accordingly
-        diff_correlation.name = 'diff_correlation';
-        units.name = 'units'
-        units.index = diff_correlation.index
-        df = pd.concat([diff_correlation, units], axis=1)
-        new_df = self.update_positions(df, 'diff_correlation', threshold)
-
-        units = new_df['units']
-
-        return units
-
-    def apply_zscorediff_filter(self, lag, threshold, zscore, units):
-        """
-        This function implements a filter which tracks how the zscore has been growing.
-        The premise is that positions should not be entered while zscore is rising.
-        :param lookback: lookback period
-        :param lag: lag to compare the zscore evolution
-        :param threshold: minimium difference to consider change
-        :param Y: Y series
-        :param X: X series
-        :param units: positions taken
-        :return: indices for position entry
-        """
-
-        # calculate zscore differences
-        zscore_diff = zscore.diff(periods=lag).fillna(0)
-
-        # change positions accordingly
-        zscore_diff.name = 'zscore_diff';
-        units.name = 'units'
-        units.index = zscore_diff.index
-        df = pd.concat([zscore_diff, units], axis=1)
-        new_df = self.update_positions(df, 'zscore_diff', threshold)
-
-        units = new_df['units']
-
-        return units
-
-    def update_positions(self, df, attribute, threshold):
-        """
-        The following function receives a dataframe containing the current positions
-        along with the attribute column from which condition should be verified.
-        A new df with positions updated accordingly is returned.
-        :param df: df containing positions and column with attribute
-        :param attribute: attribute name
-        :param threshold: threshold that condition must verify
-        :return: df with updated positions
-        """
-        previous_unit = 0
-        for index, row in df.iterrows():
-            if previous_unit == row['units']:
-                continue  # no change in positions to verify
-            else:
-                if row['units'] == 0:
-                    previous_unit = row['units']
-                    continue  # simply close trade, nothing to verify
-                else:
-                    if (row[attribute] <= threshold and row['units'] < 0) or \
-                       (row[attribute] > threshold and row['units'] > 0): # if criteria is met, continue
-                        previous_unit = row['units']
-                        continue
-                    else:  # if criteria is not met, update row
-                        df.loc[index, 'units'] = 0
-                        previous_unit = 0
-                        continue
-
-        return df
 
     def add_trading_duration(self, df):
         """
@@ -1030,55 +584,6 @@ class Trader:
 
         return returns, cum_returns, df
 
-    def calculate_sliding_position_returns(self, y, x, beta, positions):
-        """
-        Y: price of ETF Y
-        X: price of ETF X
-        beta: moving cointegration ratio
-        positions: array indicating position to enter in next day
-        """
-        # get copy of series
-        y = y.copy()
-        y.name = 'y'
-        x = x.copy()
-        x.name = 'x'
-
-        # positions preceed the day when the position is actually entered!
-        # get indices before entering position
-        new_positions = positions.diff()[positions.diff() != 0].index.values
-        # get corresponding betas
-        beta_position = pd.Series(data=[np.nan] * len(y), index=y.index, name='beta_position')
-        beta_position[new_positions] = beta[new_positions]
-        # fill in between time slots with same beta
-        beta_position = beta_position.fillna(method='ffill')
-        # shift betas to match row when position is on
-        beta_position = beta_position.shift().fillna(0)
-
-        # create variable for signalizing end of position
-        end_position = pd.Series(data=[0] * len(y), index=y.index, name='end_position')
-        end_position[new_positions] = 1.
-
-        # get corresponding X and Y
-        y_entry = pd.Series(data=[np.nan] * len(y), index=y.index, name='y_entry')
-        x_entry = pd.Series(data=[np.nan] * len(y), index=y.index, name='x_entry')
-        y_entry[new_positions] = y[new_positions]
-        x_entry[new_positions] = x[new_positions]
-        y_entry = y_entry.shift().fillna(method='ffill')
-        x_entry = x_entry.shift().fillna(method='ffill')
-
-        # name positions series
-        positions.name = 'positions'
-
-        # apply returns per trade
-        # each row contain all the parameters to be applied in that position
-        df = pd.concat([y, x, beta_position, positions.shift().fillna(0), y_entry, x_entry, end_position], axis=1)
-        returns = df.apply(lambda row: self.return_per_position(row, sliding=True), axis=1).fillna(0)
-        cum_returns = np.cumprod(returns + 1) - 1
-        df['ret'] = returns
-        returns.name = 'position_return'
-
-        return returns, cum_returns, df
-
     def return_per_position(self, row, beta=None, sliding=False):
         if row['end_position'] != 0:
             y_returns = (row['y'] - row['y_entry']) / row['y_entry']
@@ -1091,12 +596,6 @@ class Trader:
                 return (y_returns - beta * x_returns) * row['positions']
         else:
             return 0
-
-    def return_per_timestep(self, row):
-        if row['beta_position'] > 1.:
-            return ((1 / row['beta_position']) * row['y_returns'] - 1 * row['x_returns']) * row['positions']
-        else:
-            return (row['y_returns'] - row['beta_position'] * row['x_returns']) * row['positions']
 
     def calculate_metrics(self, sharpe_results, cum_returns, n_years):
         """
