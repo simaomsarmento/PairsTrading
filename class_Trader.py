@@ -29,10 +29,12 @@ class Trader:
         :param stabilizing_threshold: number of initial periods when no positions should be set
         """
 
+        # calculate normalized spread
         spread = y - beta * x
         norm_spread = (spread - spread.mean()) / np.std(spread)
         norm_spread = np.asarray(norm_spread.values)
 
+        # get indices for long and short positions
         longs_entry = norm_spread < -entry_level
         longs_exit = norm_spread > -exit_level
         shorts_entry = norm_spread > entry_level
@@ -47,33 +49,40 @@ class Trader:
         shorts_entry[:stabilizing_threshold] = False
         shorts_exit[:stabilizing_threshold] = False
 
+        # set threshold crossings with corresponding position
         num_units_long[longs_entry] = 1.
         num_units_long[longs_exit] = 0
         num_units_short[shorts_entry] = -1.
         num_units_short[shorts_exit] = 0
-        # shift to simulate delay in real life trading
+
+        # shift to simulate entry delay in real life trading
         # please comment if no need to simulate delay
         num_units_long = num_units_long.shift(1)
         num_units_short = num_units_short.shift(1)
-        # initialize with zero
+
+        # initialize market position with zero
         num_units_long[0] = 0.
         num_units_short[0] = 0.
         # finally, fill in between
         num_units_long = num_units_long.fillna(method='ffill')
         num_units_short = num_units_short.fillna(method='ffill')
-
         num_units = num_units_long + num_units_short
         num_units = pd.Series(data=num_units.values, index=y.index, name='numUnits')
 
-        # position durations
+        # add position durations
         trading_durations = self.add_trading_duration(pd.DataFrame(num_units, index=y.index))
 
-        # calculate return per position
+        # Method 1: calculate return per each position
+        # This method receives the series with the positions and calculate the return at the end of each position, not
+        # yet accounting for costs
         position_ret, _, ret_summary = self.calculate_position_returns(y, x, beta, num_units)
-        # calculate balance in total
+        # Method 2: calculate balance in total
+        # This method constructs the portfolio during the entire trading session and calculates the returns every 5 min.
+        # By compounding the returns during a position, we obtain the position return as given in method 1.
+        # This method is necessary to obtain the daily returns from which to estimate the Sharpe Ratio
         balance_summary = self.calculate_balance(y, x, beta, num_units.shift(1).fillna(0), trading_durations)
 
-        # add transaction costs and gather all info in df
+        # add transaction costs and gather all info in a single dataframe
         series_to_include = [(balance_summary.pnl, 'pnl'),
                              (balance_summary.pnl_y, 'pnl_y'),
                              (balance_summary.pnl_x, 'pnl_x'),
@@ -85,10 +94,9 @@ class Trader:
                              (pd.Series(norm_spread, index=y.index), 'norm_spread'),
                              (num_units, 'numUnits'),
                              (trading_durations, 'trading_duration')]
-
         summary = self.trade_summary(series_to_include, beta)
 
-        # calculate sharpe ratio
+        # calculate sharpe ratio for each pair separately
         ret_w_costs = summary.returns
         n_years = round(len(y) / (240 * 78))
         n_days = 252
@@ -106,13 +114,13 @@ class Trader:
     def apply_trading_strategy(self, pairs, strategy='fixed_beta', entry_multiplier=1, exit_multiplier=0,
                                test_mode=False, train_val_split='2017-01-01'):
         """
-        This function calls the kalman filter implementation for every pair.
-        :param pairs: list with pairs identified in the training set information
+        This function implements the standard fixed beta trading strategy.
+        :param pairs: list with pairs identified in the training set
+        :param strategy: currently, only fixed_beta is implemented
         :param entry_multiplier: threshold that defines where to enter a position
         :param exit_multiplier: threshold that defines where to exit a position
-        :param test_mode: flag to decide whether to apply strategy on the training set or in the test set
-        :return: sharpe ratio results
-        :return: cumulative returns
+        :param test_mode: flag to decide whether to apply strategy on the validation set or in the test set
+        :param train_val_split: split of training and validation data
         """
         sharpe_results = []
         cum_returns = []
@@ -151,24 +159,22 @@ class Trader:
 
         return (sharpe_results, cum_returns), (sharpe_results_with_costs, cum_returns_with_costs), performance
 
-
     def trade_summary(self, series, beta=0):
         """
         This function receives a set of series containing information from the trade and
         returns a DataFrame containing the summary data.
         :param series: a list of tuples containing the time series and the corresponding names
-        :return: summary dataframe with all series concatenated
+        :param beta: cointegration ratio. If moving beta, use beta=0.
         """
         for attribute, attribute_name in series:
             try:
                 attribute.name = attribute_name
             except:
                 continue
-
         summary = pd.concat([item[0] for item in series], axis=1)
 
         # change numUnits so that it corresponds to the position for the row's date,
-        # instead of corresponding to the next position
+        # instead of corresponding to the position entered in the end of that day.
         summary['numUnits'] = summary['numUnits'].shift().fillna(0)
         summary = summary.rename(columns={"numUnits": "position_during_day"})
 
@@ -179,10 +185,8 @@ class Trader:
 
     def add_trading_duration(self, df):
         """
-        The following function adds a column containing the info concerning the last position
-        returns
+        The following function adds a column containing the trading duration in days.
         :param df: Dataframe containing column with positions to enter in next day
-        :return: df with extra column providing return information for each position
         """
 
         df['trading_duration'] = [0] * len(df)
@@ -219,12 +223,12 @@ class Trader:
 
     def add_transaction_costs(self, summary, beta=0, comission_costs=0.08, market_impact=0.2, short_rental=1):
         """
-        Function to add transaction costs.
+        Function to add transaction costs per position.
         :param summary: dataframe containing summary of all transactions
+        :param beta: cointegration factor, use 0 if moving beta
         :param comission_costs: commision costs, in percentage, per security, per trade
         :param market_impact: market impact costs, in percentage, per security, per trade
         :param short_rental: short rental costs, in annual percentage
-        :return: series with returns after costs
         """
         fixed_costs_per_trade = (comission_costs + market_impact) / 100  # remove percentage
         short_costs_per_day = (short_rental / 252) / 100  # remove percentage
@@ -439,11 +443,11 @@ class Trader:
 
     def calculate_sharpe_ratio(self, n_years, n_days, ret):
         """
-
+        Calculate sharpe ratio for one asset only.
+        As an estimate of the expected value use the yearly return.
         :param n_years: number of years being considered
         :param n_days: number of trading days per year
         :param ret: array containing returns per timestep
-        :return: sharpe ratio
         """
         rf = {2014: 0.00033, 2015: 0.00053, 2016: 0.0032, 2017: 0.0093, 2018: 0.0194}
         time_in_market = n_years * n_days
@@ -468,7 +472,6 @@ class Trader:
 
         :param performance: df with summary statistics from strategy
         :param pairs: list with pairs
-        :return: sharpe ratio
         """
         # calculate total daily account balance & df with returns
         total_account_balance = performance[0][1]['account_balance'].resample('D').last().dropna()
@@ -478,7 +481,7 @@ class Trader:
             total_account_balance = total_account_balance + pair_balance
             portfolio_returns = pd.concat([portfolio_returns, pair_balance.pct_change().fillna(0)], axis=1)
 
-        # add first day with total balance
+        # add first day with initial balance
         total_account_balance = pd.Series(data=[len(pairs)],
                                           index=[total_account_balance.index[0] - timedelta(days=1)]).append(
                                           total_account_balance)
@@ -486,17 +489,22 @@ class Trader:
         # calculate portfolio volatility
         weights = np.array([1 / len(pairs)] * len(pairs))
         vol = np.sqrt(np.dot(weights.T, np.dot(portfolio_returns.cov(), weights)))
+
         # calculate sharpe ratio
         rf = {2014: 0.00033, 2015: 0.00053, 2016: 0.0032, 2017: 0.0093, 2018: 0.0194}
         annualized_ret = (total_account_balance[-1]-len(pairs))/len(pairs)
         year = total_account_balance.index[-1].year
         if year in rf.keys():
+            # assuming iid return's distributio, sr may be calculated as:
             sharpe_ratio = (annualized_ret - rf[year]) / (vol*np.sqrt(252))
             print('Sharpe Ratio assumming IID returns: ',sharpe_ratio)
             print('Autocorrelation: ', total_account_balance.pct_change().fillna(0).autocorr(lag=1))
+            # accounting for non-zero autocorrelatio, daily sr should be calculated as:
+            # the daily sharpe ratio is then multiplied by the annualization factor proposed by the paper: The
+            # Statistics of Sharpe Ratios by Andrew W Lo
             annualized_ret = total_account_balance.pct_change().fillna(0).mean()
             rf_daily = (1+rf[year])**(1/252)-1
-            sharpe_ratio = (annualized_ret-rf_daily) /vol #*np.sqrt(252)
+            sharpe_ratio = (annualized_ret-rf_daily) /vol
             print('Daily Sharpe Ratio', sharpe_ratio)
         else:
             print('Not considering risk-free rate')
@@ -506,6 +514,8 @@ class Trader:
 
     def calculate_maximum_drawdown(self, account_balance):
         """
+        Function to calculate maximum drawdown w.r.t portfolio balance.
+
         source: https://stackoverflow.com/questions/22607324/start-end-and-duration-of-maximum-drawdown-in-python
         """
 
@@ -542,6 +552,9 @@ class Trader:
 
     def calculate_position_returns(self, y, x, beta, positions):
         """
+        This method receives the series with the positions and calculate the return at the end of each position, not
+        yet accounting for costs
+
         Y: price of ETF Y
         X: price of ETF X
         beta: cointegration ratio
@@ -597,26 +610,21 @@ class Trader:
         else:
             return 0
 
-    def calculate_metrics(self, sharpe_results, cum_returns, n_years):
+    def calculate_metrics(self, cum_returns, n_years):
         """
         Calculate common metrics on average over all pairs.
-        :param sharpe_results: array with sharpe result of every pair
         :param cum_returns: array with cumulative returns of every pair
         :param n_years: numbers of yers of the trading strategy
-        :return: average sharpe ratio
         :return: average average total roi
         :return: average annual roi
         :return: percentage of pairs with positive returns
         """
-        # use below for fully invested capital
-        # sharpe_results_filtered = [sharpe for sharpe in sharpe_results if sharpe != 0]
+        # use below for fully invested capital:
         # cum_returns_filtered = [cum for cum in cum_returns if cum != 0]
-        # use below for commited capital
-        sharpe_results_filtered = sharpe_results
+        # or use below for commited capital:
         cum_returns_filtered = cum_returns
 
         avg_total_roi = np.mean(cum_returns_filtered)
-        #print('avg_total_roi: ', avg_total_roi)
 
         avg_annual_roi = ((1 + (avg_total_roi / 100)) ** (1 / float(n_years)) - 1) * 100
         print('Annual ROI: ', avg_annual_roi)
@@ -635,10 +643,11 @@ class Trader:
         :param performance: df containing a summary of each pair's trade
         :param total_pairs: list containing all the identified pairs
         :param ticker_segment_dict: dict containing segment for each ticker
+        :param n_years: number of years the strategy is running
         :return: dictionary with metrics of interest
         """
 
-        avg_total_roi, avg_annual_roi, positive_pct = self.calculate_metrics(sharpe_results, cum_returns, n_years)
+        avg_total_roi, avg_annual_roi, positive_pct = self.calculate_metrics(cum_returns, n_years)
 
         portfolio_sharpe_ratio = self.calculate_portfolio_sharpe_ratio(performance, total_pairs)
 
@@ -696,5 +705,5 @@ class Trader:
         max_dd, max_dd_duration, total_dd_duration = self.calculate_maximum_drawdown(total_account_balance)
         print('Maximum drawdown of portfolio: {:.2f}%'.format(max_dd))
 
-
         return results, pairs_df
+

@@ -156,7 +156,3 @@ if __name__ == "__main__":
     results, pairs_summary = trader.summarize_results(sharpe_results, cum_returns, performance, profitable_pairs,
                                                       ticker_segment_dict)
 
-    data_processor.dump_results(dataset=config['dataset'], pca=config['PCA'], clustering=config['clustering'],
-                                pair_restrictions=config['pair_restrictions'], trading=config['trading'],
-                                trading_filter=config['trading_filter'], results=results, train_metrics=train_metrics,
-                                pairs_summary_df=pairs_summary, filename=config['output']['filename'])
