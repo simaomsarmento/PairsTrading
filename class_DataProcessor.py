@@ -1,9 +1,6 @@
-import numpy as np
 import pandas as pd
+import numpy as np
 from openpyxl import load_workbook
-
-# Import Datetime and the Pandas DataReader
-from datetime import datetime
 
 # just set the seed for the random number generator
 np.random.seed(107)
