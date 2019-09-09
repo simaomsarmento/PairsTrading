@@ -29,5 +29,8 @@ Data available in: https://www.dropbox.com/sh/0w3vu1eylrfnkch/AABttIlDf64MmVf5CP
 
 
 
+## Training the Deep Learning models on Google Colab
 
+1. Copy all the required files to directory in Google Drive
+2. Run the notebook in the 'training' folder using google colab.
 

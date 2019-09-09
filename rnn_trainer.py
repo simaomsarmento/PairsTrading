@@ -38,7 +38,7 @@ print('Loaded {} pairs!'.format(len(pairs)))
 ################################# TRAIN MODELS #################################
 
 combinations = [(24, [50])]
-hidden_nodes_names = ['50']
+hidden_nodes_names = ['50_nodes']
 
 for i, configuration in enumerate(combinations):
 
@@ -48,7 +48,7 @@ for i, configuration in enumerate(combinations):
                     "hidden_nodes": configuration[1],
                     "loss_fct": "mse",
                     "optimizer": "rmsprop",
-                    "batch_size": 2048,
+                    "batch_size": 512,
                     "train_val_split": '2017-01-01',
                     "test_init": '2018-01-01'}
     models = forecasting_trader.train_models(pairs, model_config, model_type='rnn')

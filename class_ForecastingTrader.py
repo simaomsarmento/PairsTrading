@@ -699,6 +699,19 @@ class ForecastingTrader:
     # ################################### RNN ############################################
     def apply_RNN(self, X, y, validation_data, test_data, hidden_nodes, epochs, optimizer, loss_fct,
                   batch_size=256):
+        """
+        Note: CuDNNLSTM provides a faster implementation on GPU than regular LSTM
+        :param X:
+        :param y:
+        :param validation_data:
+        :param test_data:
+        :param hidden_nodes:
+        :param epochs:
+        :param optimizer:
+        :param loss_fct:
+        :param batch_size:
+        :return:
+        """
         # reshape
         X = X.reshape((X.shape[0], X.shape[1], 1))
         X_val = validation_data[0].reshape((validation_data[0].shape[0], validation_data[0].shape[1], 1))
@@ -739,7 +752,6 @@ class ForecastingTrader:
         model.summary()
         plot_model(model, to_file='/content/drive/PairsTrading/rnn_models/model.png', show_shapes=True,
                    show_layer_names=False)
-        #print(keras2ascii(model))
 
         # simple early stopping
         es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=50)
@@ -790,18 +802,22 @@ class ForecastingTrader:
         # define model
         glorot_init = glorot_normal(seed=None)
         model = Sequential()
+
+        # CuDNNLSTM provides a faster implementation on GPU
         #model.add(LSTM(hidden_nodes[0], activation='relu', input_shape=(n_in, 1),  kernel_initializer=glorot_init))
         model.add(CuDNNLSTM(hidden_nodes[0], input_shape=(n_in, 1), kernel_initializer=glorot_init))
         model.add(RepeatVector(n_out))
+
+        # CuDNNLSTM provides a faster implementation on GPU
         #model.add(LSTM(hidden_nodes[1], activation='relu', return_sequences=True,  kernel_initializer=glorot_init))
         model.add(CuDNNLSTM(hidden_nodes[1], return_sequences=True, kernel_initializer=glorot_init))
-        model.add(Dropout(0.1))
+
+        #model.add(Dropout(0.1))
         model.add(TimeDistributed(Dense(1, kernel_initializer=glorot_init)))
         model.compile(optimizer=optimizer, loss=loss_fct, metrics=['mae'])
         model.summary()
         plot_model(model, to_file='/content/drive/PairsTrading/encoder_decoder/model.png', show_shapes=True,
                    show_layer_names=False)
-        #print(keras2ascii(model))
 
         # fit model
         # simple early stopping
