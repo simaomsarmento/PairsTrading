@@ -1,5 +1,4 @@
-import class_ForecastingTrader
-import class_DataProcessor
+from classes import class_ForecastingTrader, class_DataProcessor
 import numpy as np
 np.random.seed(1) # NumPy
 import random
@@ -22,6 +21,7 @@ data_processor = class_DataProcessor.DataProcessor()
 ################################# READ PRICES AND PAIRS #################################
 # read prices
 df_prices = pd.read_pickle('/content/drive/PairsTrading/2009-2019/commodity_ETFs_intraday_interpolated_screened_no_outliers.pickle')
+#df_prices = pd.read_pickle('data/etfs/pickle/commodity_ETFs_intraday_interpolated_screened_no_outliers.pickle')
 # split data in training and test
 df_prices_train, df_prices_test = data_processor.split_data(df_prices,
                                                             ('01-01-2009',
@@ -31,34 +31,32 @@ df_prices_train, df_prices_test = data_processor.split_data(df_prices,
                                                             remove_nan=True)
 # load pairs
 with open('/content/drive/PairsTrading/2009-2019/pairs_unsupervised_learning_optical_intraday.pickle', 'rb') as handle:
+#with open('data/etfs/pickle/2009-2019/pairs_unsupervised_learning_optical_intraday.pickle', 'rb') as handle:
     pairs = pickle.load(handle)
 n_years_train = round(len(df_prices_train) / (240 * 78))
 print('Loaded {} pairs!'.format(len(pairs)))
 
-
 ################################# TRAIN MODELS #################################
 
-n_in_set = [6, 12, 24]
-hidden_nodes_set = [[10], [20], [30], [10,10]]
-hidden_nodes_names = [str(nodes[0])+'*2' if len(nodes) > 1 else str(nodes[0]) for nodes in hidden_nodes_set]
+combinations = [(24, [15, 15])]
+hidden_nodes_names = ['15_15_nodes']
 
-# WARNING!!
-# pairs = pairs[:2]
+for i, configuration in enumerate(combinations):
 
-for input_dim in n_in_set:
-    for i, hidden_nodes in enumerate(hidden_nodes_set):
-        model_config = {"n_in": input_dim,
-                        "n_out": 1,
-                        "epochs": 500,
-                        "hidden_nodes": hidden_nodes,
-                        "loss_fct": "mse",
-                        "optimizer": "rmsprop",
-                        "batch_size": 256,
-                        "train_val_split": '2017-01-01',
-                        "test_init": '2018-01-01'}
-        models = forecasting_trader.train_models(pairs, model_config, model_type='mlp')
-        # save models for this configuration
-        with open('/content/drive/PairsTrading/mlp_models/models_n_in-'+str(input_dim)+'_hidden_nodes-'+hidden_nodes_names[i]+'.pkl', 'wb') as f:
-            pickle.dump(models, f)
+    model_config = {"n_in": configuration[0],
+                    "n_out": 2,
+                    "epochs": 500,
+                    "hidden_nodes": configuration[1],
+                    "loss_fct": "mse",
+                    "optimizer": "rmsprop",
+                    "batch_size": 512,
+                    "train_val_split": '2017-01-01',
+                    "test_init": '2018-01-01'}
+    models = forecasting_trader.train_models(pairs, model_config, model_type='encoder_decoder')
+
+    # save models for this configuration
+    with open('/content/drive/PairsTrading/encoder_decoder/models_n_in-' + str(configuration[0]) + '_hidden_nodes-' +
+              hidden_nodes_names[i] + '.pkl', 'wb') as f:
+        pickle.dump(models, f)
 
 gc.collect()

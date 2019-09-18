@@ -1,5 +1,4 @@
-import class_ForecastingTrader
-import class_DataProcessor
+from classes import class_ForecastingTrader, class_DataProcessor
 import numpy as np
 np.random.seed(1) # NumPy
 import random
@@ -22,6 +21,7 @@ data_processor = class_DataProcessor.DataProcessor()
 ################################# READ PRICES AND PAIRS #################################
 # read prices
 df_prices = pd.read_pickle('/content/drive/PairsTrading/2009-2019/commodity_ETFs_intraday_interpolated_screened_no_outliers.pickle')
+#df_prices = pd.read_pickle('data/etfs/pickle/commodity_ETFs_intraday_interpolated_screened_no_outliers.pickle')
 # split data in training and test
 df_prices_train, df_prices_test = data_processor.split_data(df_prices,
                                                             ('01-01-2009',
@@ -31,6 +31,7 @@ df_prices_train, df_prices_test = data_processor.split_data(df_prices,
                                                             remove_nan=True)
 # load pairs
 with open('/content/drive/PairsTrading/2009-2019/pairs_unsupervised_learning_optical_intraday.pickle', 'rb') as handle:
+#with open('data/etfs/pickle/2009-2019/pairs_unsupervised_learning_optical_intraday.pickle', 'rb') as handle:
     pairs = pickle.load(handle)
 n_years_train = round(len(df_prices_train) / (240 * 78))
 print('Loaded {} pairs!'.format(len(pairs)))

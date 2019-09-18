@@ -15,15 +15,15 @@ import pandas as pd
 
 import matplotlib.pyplot as plt
 
-import class_Trader
+from classes import class_Trader
 
 from sklearn.preprocessing import StandardScaler
 
 # Import keras
 from keras.models import Sequential
-from keras.layers import Dense, Flatten, GRU, Dropout, LSTM, TimeDistributed, CuDNNLSTM
+from keras.layers import Dense, Dropout, TimeDistributed, CuDNNLSTM
 from keras.callbacks import EarlyStopping
-from keras.initializers import he_normal, glorot_normal
+from keras.initializers import glorot_normal
 from keras.layers import RepeatVector
 from keras.utils import plot_model
 #from keras_sequential_ascii import keras2ascii

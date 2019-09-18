@@ -3,7 +3,7 @@ import numpy as np
 import json
 import sys
 import pickle
-import class_SeriesAnalyser, class_Trader, class_DataProcessor, class_ForecastingTrader
+from classes import class_Trader, class_ForecastingTrader, class_DataProcessor, class_SeriesAnalyser
 
 # just set the seed for the random number generator
 np.random.seed(107)
