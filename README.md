@@ -23,7 +23,7 @@ A detailed explanation concerning the code organization can be found in *code_or
 
 - The files have been organized in folders to make this repo tidier. Nevertheless, the code presented in the notebooks and 
 in the "trainer" files presumes the class files are in the same directory. 
-- To rerun the notebooks or the trainer files the path to the classes must be adapted.
+- To rerun the notebooks or the training files the path to the classes must be adapted.
  
 Data available in: https://www.dropbox.com/sh/0w3vu1eylrfnkch/AABttIlDf64MmVf5CP1Qy-XOa?dl=0
 
