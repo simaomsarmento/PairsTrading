@@ -22,7 +22,7 @@ A detailed explanation concerning the code organization can be found in *code_or
 ## Notes:
 
 - The files have been organized in folders to make this repo tidier. Nevertheless, the code presented in the notebooks and 
-in the "trainer" files presumes the class files are in the same directory. 
+in the training files presumes the class files are in the same directory. 
 - To rerun the notebooks or the training files the path to the classes must be adapted.
  
 Data available in: https://www.dropbox.com/sh/0w3vu1eylrfnkch/AABttIlDf64MmVf5CP1Qy-XOa?dl=0
@@ -31,6 +31,6 @@ Data available in: https://www.dropbox.com/sh/0w3vu1eylrfnkch/AABttIlDf64MmVf5CP
 
 ## Training the Deep Learning models on Google Colab
 
-1. Copy all the required files to directory in Google Drive
+1. Copy all the required files (data folder + classes + training files) to directory in Google Drive
 2. Run the notebook in the 'training' folder using google colab.
 
